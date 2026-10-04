@@ -16,8 +16,16 @@ data class AppSettings(
     val protocol: ProtocolType = ProtocolType.FTMS,
     val manualWriteUuid: String = "",
     val manualNotifyUuid: String = "",
+
+    // Скорость
     val minSpeedKmh: Double = 1.0,
     val maxSpeedKmh: Double = 12.0,
+
+    // Наклон
+    val maxInclinePercent: Double = 15.0,
+    val inclineStep: Double = 0.5,
+
+    // Авторегулировка по пульсу
     val hrEnabled: Boolean = false,
     val hrMode: HrMode = HrMode.TARGET,
     val targetHr: Int = 130,
