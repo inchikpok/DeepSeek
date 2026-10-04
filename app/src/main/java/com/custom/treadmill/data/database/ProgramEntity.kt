@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
 data class ProgramSegment(
     @SerialName("duration_sec") val durationSec: Int,
     @SerialName("speed_kmh") val speedKmh: Double,
+    @SerialName("incline_percent") val inclinePercent: Double = 0.0,
     val name: String = ""
 )
 
