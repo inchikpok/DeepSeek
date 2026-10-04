@@ -119,9 +119,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        viewModelScope.launch {
-            conn.notifications.collect { protocol?.onNotification(it) }
-        }
+        viewModelScope.launch { conn.notifications.collect { protocol?.onNotification(it) } }
         conn.connect(device)
         stopScan()
     }
@@ -200,13 +198,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSpeedManual(kmh: Double) = setSpeed(kmh)
 
+    fun setIncline(percent: Double) {
+        viewModelScope.launch {
+            val s = settingsStore.settings.value
+            val safe = percent.coerceIn(0.0, s.maxInclinePercent)
+            protocol?.setIncline(safe)
+        }
+    }
+
     fun startTreadmill() { viewModelScope.launch { protocol?.start() } }
     fun stopTreadmill() { viewModelScope.launch { protocol?.stop() } }
 
     fun emergencyStop() {
         viewModelScope.launch {
             protocol?.setSpeed(0.0)
-            delay(200)
+            delay(120)
+            protocol?.setIncline(0.0)
+            delay(120)
             protocol?.stop()
             workoutManager.stop()
             setAutoHrEnabled(false)
@@ -252,7 +260,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startWorkout(program: ProgramData) {
         resetStats()
-        workoutManager.start(viewModelScope, program) { speed -> setSpeed(speed) }
+        workoutManager.start(
+            scope = viewModelScope,
+            program = program,
+            onSetSpeed = { speed -> setSpeed(speed) },
+            onSetIncline = { inc -> setIncline(inc) }
+        )
     }
 
     fun stopWorkout() { workoutManager.stop() }
