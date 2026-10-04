@@ -105,6 +105,33 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
+                Text("Наклон дорожки", fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = settings.maxInclinePercent.toString(),
+                    onValueChange = { v ->
+                        val d = v.toDoubleOrNull() ?: return@OutlinedTextField
+                        vm.updateSettings { it.copy(maxInclinePercent = d) }
+                    },
+                    label = { Text("Максимум, % (по умолчанию 15)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = settings.inclineStep.toString(),
+                    onValueChange = { v ->
+                        val d = v.toDoubleOrNull() ?: return@OutlinedTextField
+                        vm.updateSettings { it.copy(inclineStep = d) }
+                    },
+                    label = { Text("Шаг кнопок, % (по умолчанию 0.5)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
