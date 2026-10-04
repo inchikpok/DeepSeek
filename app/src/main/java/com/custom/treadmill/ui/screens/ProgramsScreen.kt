@@ -84,10 +84,10 @@ fun ProgramsScreen(
             Button(onClick = {
                 editingId = 0L
                 editing = ProgramData("Новая программа", "", listOf(
-                    ProgramSegment(300, 5.0, "Разминка"),
-                    ProgramSegment(120, 10.0, "Интервал 1"),
-                    ProgramSegment(120, 6.0, "Отдых"),
-                    ProgramSegment(300, 4.0, "Заминка")
+                    ProgramSegment(300, 5.0, 0.0, "Разминка"),
+                    ProgramSegment(120, 10.0, 2.0, "Интервал 1"),
+                    ProgramSegment(120, 6.0, 0.0, "Отдых"),
+                    ProgramSegment(300, 4.0, 0.0, "Заминка")
                 ))
             }) { Text("Создать") }
 
@@ -178,46 +178,55 @@ private fun ProgramEditorDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
-                Text("Сегменты:")
+                Text("Сегменты (время, скорость, наклон):")
                 segments.forEachIndexed { index, seg ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         OutlinedTextField(
                             value = seg.name,
                             onValueChange = {
                                 segments[index] = seg.copy(name = it)
                                 segments = segments.toMutableList()
                             },
-                            label = { Text("Имя") },
-                            modifier = Modifier.weight(1f)
+                            label = { Text("Имя сегмента") },
+                            modifier = Modifier.fillMaxWidth()
                         )
-                        OutlinedTextField(
-                            value = seg.durationSec.toString(),
-                            onValueChange = {
-                                val v = it.toIntOrNull() ?: 0
-                                segments[index] = seg.copy(durationSec = v)
-                                segments = segments.toMutableList()
-                            },
-                            label = { Text("Сек") },
-                            modifier = Modifier.weight(0.5f)
-                        )
-                        OutlinedTextField(
-                            value = seg.speedKmh.toString(),
-                            onValueChange = {
-                                val v = it.toDoubleOrNull() ?: 0.0
-                                segments[index] = seg.copy(speedKmh = v)
-                                segments = segments.toMutableList()
-                            },
-                            label = { Text("Км/ч") },
-                            modifier = Modifier.weight(0.6f)
-                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            OutlinedTextField(
+                                value = seg.durationSec.toString(),
+                                onValueChange = {
+                                    val v = it.toIntOrNull() ?: 0
+                                    segments[index] = seg.copy(durationSec = v)
+                                    segments = segments.toMutableList()
+                                },
+                                label = { Text("Сек") },
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = seg.speedKmh.toString(),
+                                onValueChange = {
+                                    val v = it.toDoubleOrNull() ?: 0.0
+                                    segments[index] = seg.copy(speedKmh = v)
+                                    segments = segments.toMutableList()
+                                },
+                                label = { Text("Км/ч") },
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = seg.inclinePercent.toString(),
+                                onValueChange = {
+                                    val v = it.toDoubleOrNull() ?: 0.0
+                                    segments[index] = seg.copy(inclinePercent = v)
+                                    segments = segments.toMutableList()
+                                },
+                                label = { Text("Наклон %") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
                 TextButton(onClick = {
-                    segments.add(ProgramSegment(60, 5.0, "Новый"))
+                    segments.add(ProgramSegment(60, 5.0, 0.0, "Новый"))
                     segments = segments.toMutableList()
                 }) { Text("+ Добавить сегмент") }
             }
