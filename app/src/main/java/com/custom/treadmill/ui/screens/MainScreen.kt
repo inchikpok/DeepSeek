@@ -39,10 +39,10 @@ import androidx.compose.ui.unit.sp
 import com.custom.treadmill.TreadmillApp
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.ui.Routes
-import com.custom.treadmill.ui.ScanMode
 import com.custom.treadmill.ui.hasBlePermissions
 import com.custom.treadmill.ui.requiredBlePermissions
 import com.custom.treadmill.ui.viewmodels.MainViewModel
+import com.custom.treadmill.ui.viewmodels.ScanMode   // <-- ИСПРАВЛЕНО
 
 @Composable
 fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
