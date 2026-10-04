@@ -8,10 +8,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
-/**
- * Проприетарный протокол FitShow. Ищет writable-характеристику,
- * позволяет задать UUID вручную, поддерживает отправку hex через Debug.
- */
 class FitShowProprietaryProtocol(
     private val manualWriteUuid: UUID? = null,
     private val manualNotifyUuid: UUID? = null
@@ -30,6 +26,7 @@ class FitShowProprietaryProtocol(
     private var notifyUuid: UUID? = null
 
     var speedScale: Double = 10.0
+    var inclineScale: Double = 10.0
 
     override suspend fun initialize(conn: BleConnection): Boolean {
         this.conn = conn
@@ -55,16 +52,14 @@ class FitShowProprietaryProtocol(
                     service.startsWith("0000ff0") ||
                     service.startsWith("0000fee") ||
                     Uuids.FITSHOW_SERVICE_CANDIDATES.contains(info.serviceUuid)
-
                 if (!isCandidate) continue
-
                 if (writeUuid == null && (info.properties and writeMask) != 0) {
                     writeUuid = info.uuid
-                    Log.d("FitShow", "write-характеристика: ${info.uuid}")
+                    Log.d("FitShow", "write: ${info.uuid}")
                 }
                 if (notifyUuid == null && (info.properties and notifyMask) != 0) {
                     notifyUuid = info.uuid
-                    Log.d("FitShow", "notify-характеристика: ${info.uuid}")
+                    Log.d("FitShow", "notify: ${info.uuid}")
                 }
             }
         }
@@ -80,8 +75,6 @@ class FitShowProprietaryProtocol(
 
         notifyUuid?.let { conn.setNotify(it, true, indicate = false) }
         delay(300)
-
-        Log.d("FitShow", "init: write=$writeUuid, notify=$notifyUuid")
         return writeUuid != null
     }
 
@@ -100,8 +93,17 @@ class FitShowProprietaryProtocol(
     override suspend fun setSpeed(speedKmh: Double): Boolean {
         val uuid = writeUuid ?: return false
         val raw = (speedKmh * speedScale).toInt().coerceIn(0, 255).toByte()
-        val cmd = byteArrayOf(0xA3.toByte(), raw)
-        return conn?.write(uuid, cmd, true) ?: false
+        return conn?.write(uuid, byteArrayOf(0xA3.toByte(), raw), true) ?: false
+    }
+
+    /**
+     * Гипотетическая команда наклона: 0xA4 + байт (percent * inclineScale).
+     * Реальный протокол FitShow может отличаться — калибруется через Debug.
+     */
+    override suspend fun setIncline(percent: Double): Boolean {
+        val uuid = writeUuid ?: return false
+        val raw = (percent * inclineScale).toInt().coerceIn(0, 255).toByte()
+        return conn?.write(uuid, byteArrayOf(0xA4.toByte(), raw), true) ?: false
     }
 
     override fun onNotification(n: BleNotification) {
