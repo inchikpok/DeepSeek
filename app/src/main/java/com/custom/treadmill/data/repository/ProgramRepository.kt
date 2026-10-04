@@ -7,6 +7,7 @@ import com.custom.treadmill.data.database.ProgramSegment
 import com.custom.treadmill.data.database.WorkoutLogDao
 import com.custom.treadmill.data.database.WorkoutLogEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 class ProgramRepository(
@@ -34,7 +35,11 @@ class ProgramRepository(
 
     fun toData(e: ProgramEntity): ProgramData {
         val segs: List<ProgramSegment> = try {
-            json.decodeFromString(e.segmentsJson)
+            // Явный сериализатор — не требует import kotlinx.serialization.decodeFromString
+            json.decodeFromString(
+                ListSerializer(ProgramSegment.serializer()),
+                e.segmentsJson
+            )
         } catch (_: Exception) {
             emptyList()
         }
@@ -42,9 +47,19 @@ class ProgramRepository(
     }
 
     fun toEntity(d: ProgramData, id: Long = 0): ProgramEntity =
-        ProgramEntity(id, d.name, d.description, json.encodeToString(d.segments))
+        ProgramEntity(
+            id,
+            d.name,
+            d.description,
+            json.encodeToString(
+                ListSerializer(ProgramSegment.serializer()),
+                d.segments
+            )
+        )
 
-    fun exportJson(d: ProgramData): String = json.encodeToString(d)
+    fun exportJson(d: ProgramData): String =
+        json.encodeToString(ProgramData.serializer(), d)
 
-    fun importJson(text: String): ProgramData = json.decodeFromString(text)
+    fun importJson(text: String): ProgramData =
+        json.decodeFromString(ProgramData.serializer(), text)
 }
