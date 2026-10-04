@@ -42,7 +42,7 @@ import com.custom.treadmill.ui.Routes
 import com.custom.treadmill.ui.hasBlePermissions
 import com.custom.treadmill.ui.requiredBlePermissions
 import com.custom.treadmill.ui.viewmodels.MainViewModel
-import com.custom.treadmill.ui.viewmodels.ScanMode   // <-- ИСПРАВЛЕНО
+import com.custom.treadmill.ui.viewmodels.ScanMode
 
 @Composable
 fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
@@ -107,23 +107,28 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     MetricBlock("Скорость", "%.1f км/ч".format(data.speedKmh))
-                    MetricBlock("Пульс", if (hr > 0) "$hr уд/мин" else "—")
+                    MetricBlock("Наклон", "%.1f %%".format(data.inclinePercent))
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    MetricBlock("Дистанция", "%.2f км".format(data.distanceKm))
+                    MetricBlock("Пульс", if (hr > 0) "$hr уд/мин" else "—")
                     MetricBlock("Время", formatTime(data.elapsedSec))
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    MetricBlock("Дистанция", "%.2f км".format(data.distanceKm))
                     MetricBlock("Калории", "${data.calories} ккал")
-                    MetricBlock("Автопульс", if (settings.hrEnabled) "ВКЛ" else "выкл")
                 }
+                Spacer(Modifier.height(8.dp))
+                MetricBlock("Автопульс", if (settings.hrEnabled) "ВКЛ" else "выкл")
             }
         }
 
         Spacer(Modifier.height(16.dp))
 
+        // ---------- Управление скоростью ----------
+        Text("Скорость", fontSize = 13.sp, color = Color.Gray)
+        Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { vm.startTreadmill() }, modifier = Modifier.weight(1f)) { Text("Старт") }
             Button(
@@ -132,7 +137,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF616161))
             ) { Text("Стоп") }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = { vm.setSpeedManual(data.speedKmh - 0.5) },
@@ -142,12 +147,35 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                 onClick = { vm.setSpeedManual(data.speedKmh + 0.5) },
                 modifier = Modifier.weight(1f)
             ) { Text("+ 0.5") }
-            Button(
-                onClick = { vm.emergencyStop() },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
-            ) { Text("СТОП!") }
         }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- Управление наклоном ----------
+        Text("Наклон", fontSize = 13.sp, color = Color.Gray)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { vm.setIncline(data.inclinePercent - settings.inclineStep) },
+                modifier = Modifier.weight(1f)
+            ) { Text("− %.1f%%".format(settings.inclineStep)) }
+            OutlinedButton(
+                onClick = { vm.setIncline(data.inclinePercent + settings.inclineStep) },
+                modifier = Modifier.weight(1f)
+            ) { Text("+ %.1f%%".format(settings.inclineStep)) }
+            OutlinedButton(
+                onClick = { vm.setIncline(0.0) },
+                modifier = Modifier.weight(1f)
+            ) { Text("0%") }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Button(
+            onClick = { vm.emergencyStop() },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
+        ) { Text("ЭКСТРЕННАЯ ОСТАНОВКА") }
 
         Spacer(Modifier.height(16.dp))
         Divider()
