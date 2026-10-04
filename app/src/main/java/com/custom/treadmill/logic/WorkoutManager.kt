@@ -32,7 +32,8 @@ class WorkoutManager {
     fun start(
         scope: CoroutineScope,
         program: ProgramData,
-        onSetSpeed: suspend (Double) -> Unit
+        onSetSpeed: suspend (Double) -> Unit,
+        onSetIncline: suspend (Double) -> Unit = {}
     ) {
         stop()
         job = scope.launch {
@@ -46,6 +47,7 @@ class WorkoutManager {
             var elapsed = 0
             for ((index, seg) in segments.withIndex()) {
                 onSetSpeed(seg.speedKmh)
+                onSetIncline(seg.inclinePercent)
                 _state.value = _state.value.copy(
                     currentSegmentIndex = index,
                     currentSegmentName = seg.name.ifBlank { "Сегмент ${index + 1}" },
