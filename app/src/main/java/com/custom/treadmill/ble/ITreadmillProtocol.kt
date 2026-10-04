@@ -5,6 +5,7 @@ import java.util.UUID
 
 data class TreadmillData(
     val speedKmh: Double = 0.0,
+    val inclinePercent: Double = 0.0,
     val distanceKm: Double = 0.0,
     val calories: Int = 0,
     val elapsedSec: Int = 0,
@@ -23,5 +24,6 @@ interface ITreadmillProtocol {
     suspend fun start(): Boolean
     suspend fun stop(): Boolean
     suspend fun setSpeed(speedKmh: Double): Boolean
+    suspend fun setIncline(percent: Double): Boolean
     fun onNotification(n: BleNotification)
 }
