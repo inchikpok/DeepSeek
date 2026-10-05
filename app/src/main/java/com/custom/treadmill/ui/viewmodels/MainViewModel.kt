@@ -240,11 +240,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun emergencyStop() {
         viewModelScope.launch {
-            protocol?.setSpeed(0.0)
-            delay(120)
-            protocol?.setIncline(0.0)
-            delay(120)
+            // Сначала остановка (внутри уже шлётся скорость 0)
             protocol?.stop()
+            // Потом сбрасываем наклон
+            protocol?.setIncline(0.0)
             workoutManager.stop()
             setAutoHrEnabled(false)
             _statusMessage.value = "ЭКСТРЕННАЯ ОСТАНОВКА"
