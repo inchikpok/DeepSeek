@@ -56,6 +56,8 @@ import com.custom.treadmill.ui.viewmodels.MainViewModel
 import com.custom.treadmill.ui.viewmodels.ScanMode
 import kotlin.math.max
 import kotlin.math.roundToInt
+import androidx.compose.ui.platform.LocalContext
+
 
 @Composable
 fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
