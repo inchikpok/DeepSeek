@@ -43,13 +43,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _treadmillState = MutableStateFlow(BleConnectionState.DISCONNECTED)
     val treadmillState: StateFlow<BleConnectionState> = _treadmillState.asStateFlow()
 
+    // НОВОЕ: название подключённой дорожки
+    private val _treadmillName = MutableStateFlow<String?>(null)
+    val treadmillName: StateFlow<String?> = _treadmillName.asStateFlow()
+
+    // НОВОЕ: имя пульсометра
+    private val _hrName = MutableStateFlow<String?>(null)
+    val hrName: StateFlow<String?> = _hrName.asStateFlow()
+
     private val _hrState = MutableStateFlow(BleConnectionState.DISCONNECTED)
     val hrState: StateFlow<BleConnectionState> = _hrState.asStateFlow()
 
     private val _treadmillData = MutableStateFlow(TreadmillData())
     val treadmillData: StateFlow<TreadmillData> = _treadmillData.asStateFlow()
 
-    // Целевые значения — то, что показываем на плитках (мгновенно)
     private val _targetSpeed = MutableStateFlow(0.0)
     val targetSpeed: StateFlow<Double> = _targetSpeed.asStateFlow()
 
@@ -109,7 +116,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _treadmillData.collect { d ->
                 if (d.speedKmh > 0.05) { speedSum += d.speedKmh; speedCount++ }
 
-                // Синхронизация target с реальными данными, если давно не командовали
                 val now = System.currentTimeMillis()
                 if (now - lastSpeedCmdTime > 3500 && abs(_targetSpeed.value - d.speedKmh) > 0.1) {
                     _targetSpeed.value = d.speedKmh
@@ -130,6 +136,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun connectTreadmill(device: BluetoothDevice) {
         disconnectTreadmill()
+        // Сохраняем имя сразу (до подключения)
+        _treadmillName.value = try { device.name } catch (_: SecurityException) { null }
+            ?: "Неизвестная дорожка"
+
         val conn = BleConnection(getApplication(), "TR")
         treadmillConn = conn
         viewModelScope.launch { conn.log.collect { addLog(it) } }
@@ -165,7 +175,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val ok = p.initialize(conn)
             addLog(if (ok) "Протокол инициализирован" else "Протокол инициализирован с ошибками")
             _statusMessage.value = if (ok) "Дорожка готова" else "Не найдены нужные характеристики"
-            // Стартовая синхронизация
             _targetSpeed.value = _treadmillData.value.speedKmh
             _targetIncline.value = _treadmillData.value.inclinePercent
         }
@@ -179,10 +188,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _treadmillData.value = TreadmillData()
         _targetSpeed.value = 0.0
         _targetIncline.value = 0.0
+        _treadmillName.value = null
     }
 
     fun connectHeartRate(device: BluetoothDevice) {
         disconnectHeartRate()
+        _hrName.value = try { device.name } catch (_: SecurityException) { null }
+            ?: "Пульсометр"
+
         val conn = BleConnection(getApplication(), "HR")
         hrConn = conn
         hrService.reset()
@@ -215,6 +228,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         hrConn = null
         _hrState.value = BleConnectionState.DISCONNECTED
         _heartRate.value = 0
+        _hrName.value = null
     }
 
     fun setSpeed(kmh: Double) {
@@ -240,9 +254,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun emergencyStop() {
         viewModelScope.launch {
-            // Сначала остановка (внутри уже шлётся скорость 0)
             protocol?.stop()
-            // Потом сбрасываем наклон
             protocol?.setIncline(0.0)
             workoutManager.stop()
             setAutoHrEnabled(false)
@@ -278,7 +290,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val cur = _targetSpeed.value
                 val newSpeed = HeartRateController.evaluate(cfg, hr, cur) ?: continue
                 setSpeed(newSpeed)
-                addLog("HR-авто: пульс=$hr, скорость %.1f → %.1f".format(cur, newSpeed))
+                addLog("HR-авто: пульс=$hr, скорость %.1f -> %.1f".format(cur, newSpeed))
             }
         }
     }
