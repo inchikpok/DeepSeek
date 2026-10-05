@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
@@ -30,13 +28,13 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val logs by vm.logs.collectAsState()
     val treadmillState by vm.treadmillState.collectAsState()
+    val treadmillName by vm.treadmillName.collectAsState()
     val settings by vm.settings.collectAsState()
 
-    var hexInput by remember { mutableStateOf("A4 05") }
+    var hexInput by remember { mutableStateOf("02 96 00") }
     var savedMessage by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
-    // Автоскролл вверх, если пользователь у верхнего края
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty() && listState.firstVisibleItemIndex <= 1) {
             listState.animateScrollToItem(0)
@@ -58,11 +56,10 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
         }
     }
 
-    // ---- Тёмный/светлый фон по теме ----
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().padding(12.dp)) {
 
-            // ---- Шапка ----
+            // ---------- Шапка ----------
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -103,10 +100,11 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // ---- Статус ----
+            // ---------- Статус ----------
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(10.dp)) {
-                    Text("Дорожка: $treadmillState", fontSize = 12.sp)
+                    Text("Дорожка: ${treadmillName ?: "—"}", fontSize = 12.sp)
+                    Text("Состояние: $treadmillState", fontSize = 12.sp)
                     Text("Протокол: ${settings.protocol}", fontSize = 12.sp)
                     Text("Записей в логе: ${logs.size}", fontSize = 12.sp)
                 }
@@ -114,42 +112,37 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---- Тест наклона (быстрые команды) ----
+            // ---------- Ручной ввод hex ----------
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(10.dp)) {
-                    Text("⚡ Тест наклона", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    Spacer(Modifier.height(4.dp))
-                    listOf("A4 05", "A4 32", "A4 01 05", "A5 05", "B0 05", "A4 0A").forEach { hex ->
-                        Button(
-                            onClick = { vm.sendRawHex(hex) },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                            contentPadding = PaddingValues(vertical = 6.dp)
-                        ) { Text(hex, fontSize = 11.sp) }
+                    Text("Отправить команду (hex)", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = hexInput,
+                            onValueChange = { hexInput = it },
+                            label = { Text("hex") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(onClick = { vm.sendRawHex(hexInput) }) { Text("Отпр.") }
                     }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Например: 02 96 00 — скорость 1.5 км/ч; 03 0A 00 — наклон 1%",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
             Spacer(Modifier.height(6.dp))
 
-            // ---- Ручной ввод hex ----
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = hexInput,
-                    onValueChange = { hexInput = it },
-                    label = { Text("hex") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                Button(onClick = { vm.sendRawHex(hexInput) }) { Text("Отпр.") }
-            }
-
-            Spacer(Modifier.height(6.dp))
-
-            // ---- Лог (скроллится) ----
+            // ---------- Лог ----------
             Card(Modifier.fillMaxWidth().weight(1f)) {
                 Column(Modifier.fillMaxSize().padding(8.dp)) {
                     Text("Лог BLE", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
