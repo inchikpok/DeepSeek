@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.custom.treadmill.TreadmillApp
@@ -36,7 +37,9 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val ble = TreadmillApp.instance.bleManager
 
     val treadmillState by vm.treadmillState.collectAsState()
+    val treadmillName by vm.treadmillName.collectAsState()
     val hrState by vm.hrState.collectAsState()
+    val hrName by vm.hrName.collectAsState()
     val data by vm.treadmillData.collectAsState()
     val targetSpeed by vm.targetSpeed.collectAsState()
     val targetIncline by vm.targetIncline.collectAsState()
@@ -47,8 +50,6 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val settings by vm.settings.collectAsState()
 
     var permsGranted by remember { mutableStateOf(hasBlePermissions(ctx)) }
-    var menuOpen by remember { mutableStateOf(false) }
-
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permsGranted = hasBlePermissions(ctx) }
@@ -67,57 +68,42 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp)
             ) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(10.dp))
 
-                // ---------- Заголовок с меню ----------
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Treadmill Control",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            "UNixFit-990x · FTMS",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Box {
-                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Меню")
-                        }
-                        DropdownMenu(
-                            expanded = menuOpen,
-                            onDismissRequest = { menuOpen = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Debug (BLE)") },
-                                onClick = {
-                                    menuOpen = false
-                                    onNavigate(Routes.DEBUG)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("О программе") },
-                                onClick = {
-                                    menuOpen = false
-                                    onNavigate(Routes.ABOUT)
-                                }
-                            )
-                        }
-                    }
+                // ---------- Заголовок по центру ----------
+                Text(
+                    "Treadmill Control",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(2.dp))
+                // Подзаголовок: имя подключённой дорожки или подсказка
+                val subtitle = when {
+                    treadmillName != null -> treadmillName!!
+                    else -> "Дорожка не подключена"
                 }
+                Text(
+                    subtitle,
+                    fontSize = 12.sp,
+                    color = if (treadmillName != null)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
 
                 // ---------- Статусы ----------
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CompactStatus(
                         label = "Дорожка",
+                        deviceName = treadmillName,
                         state = treadmillState,
                         onConnect = { vm.startScanTreadmill() },
                         onDisconnect = { vm.disconnectTreadmill() },
@@ -125,6 +111,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     )
                     CompactStatus(
                         label = "Пульсометр",
+                        deviceName = hrName,
                         state = hrState,
                         onConnect = { vm.startScanHeartRate() },
                         onDisconnect = { vm.disconnectHeartRate() },
@@ -132,7 +119,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     )
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // ---------- Плитки управления ----------
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -155,7 +142,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     )
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // ---------- Метрики ----------
                 Card(Modifier.fillMaxWidth()) {
@@ -172,7 +159,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // ---------- Автопульс ----------
                 Card(Modifier.fillMaxWidth()) {
@@ -181,15 +168,9 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
+                            Text("Автопульс", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Text(
-                                "Автопульс",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                if (settings.hrEnabled)
-                                    "Цель: ${settings.targetHr} уд/мин"
-                                else "Выключен",
+                                if (settings.hrEnabled) "Цель: ${settings.targetHr} уд/мин" else "Выключен",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -197,9 +178,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         TextButton(
                             onClick = { onNavigate(Routes.SETTINGS) },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text("Настроить", fontSize = 12.sp)
-                        }
+                        ) { Text("Настроить", fontSize = 12.sp) }
                         Switch(
                             checked = settings.hrEnabled,
                             onCheckedChange = { vm.setAutoHrEnabled(it) }
@@ -207,7 +186,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // ---------- Старт / Стоп ----------
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -227,7 +206,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     ) { Text("Стоп", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // ---------- Экстренный стоп ----------
                 Button(
@@ -237,10 +216,10 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     contentPadding = PaddingValues(vertical = 10.dp)
                 ) { Text("ЭКСТРЕННАЯ ОСТАНОВКА", fontWeight = FontWeight.Bold) }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(12.dp))
             }
 
-            // ---------- Всплывающее сообщение внизу ----------
+            // ---------- Всплывающее сообщение снизу ----------
             statusMessage?.let { msg ->
                 Card(
                     modifier = Modifier
@@ -286,6 +265,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
 @Composable
 private fun CompactStatus(
     label: String,
+    deviceName: String?,
     state: BleConnectionState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -314,6 +294,17 @@ private fun CompactStatus(
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            // Имя устройства, если подключено
+            if (connected && deviceName != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    deviceName,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Spacer(Modifier.height(4.dp))
             if (connected) {
                 OutlinedButton(
