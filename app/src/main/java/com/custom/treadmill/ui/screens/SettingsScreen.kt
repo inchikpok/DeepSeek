@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.data.repository.ProtocolType
+import com.custom.treadmill.data.repository.ThemeMode
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 
 @Composable
@@ -40,6 +41,38 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
 
+        // ---------- Внешний вид ----------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text("Внешний вид", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = settings.themeMode == ThemeMode.SYSTEM,
+                        onClick = { vm.updateSettings { it.copy(themeMode = ThemeMode.SYSTEM) } }
+                    )
+                    Text("Как в системе")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = settings.themeMode == ThemeMode.LIGHT,
+                        onClick = { vm.updateSettings { it.copy(themeMode = ThemeMode.LIGHT) } }
+                    )
+                    Text("Светлая")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = settings.themeMode == ThemeMode.DARK,
+                        onClick = { vm.updateSettings { it.copy(themeMode = ThemeMode.DARK) } }
+                    )
+                    Text("Тёмная")
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- Протокол ----------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 Text("Протокол управления", fontWeight = FontWeight.Bold)
@@ -76,6 +109,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
 
+        // ---------- Скорость ----------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 Text("Ограничения скорости", fontWeight = FontWeight.Bold)
@@ -103,6 +137,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
 
+        // ---------- Наклон ----------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 Text("Наклон дорожки", fontWeight = FontWeight.Bold)
@@ -130,6 +165,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
 
+        // ---------- Авторегулировка ----------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 Row(
@@ -148,7 +184,6 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
                 Divider()
                 Spacer(Modifier.height(8.dp))
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(
                         selected = settings.hrMode == HrMode.TARGET,
@@ -163,7 +198,6 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                     )
                     Text("Зона (мин–макс)")
                 }
-
                 Spacer(Modifier.height(8.dp))
 
                 if (settings.hrMode == HrMode.TARGET) {
