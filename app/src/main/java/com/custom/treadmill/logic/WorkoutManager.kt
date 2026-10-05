@@ -105,14 +105,18 @@ class WorkoutManager {
 
     private fun launchLoop() {
         val scope = scopeRef ?: return
+        val program = currentProgram ?: return
+        // Явные типы suspend-функций — иначе компилятор не выводит
+        val onSetSpeed: suspend (Double) -> Unit = onSetSpeedRef ?: return
+        val onSetIncline: suspend (Double) -> Unit = onSetInclineRef ?: { _: Double -> }
+
         job = scope.launch {
-            val program = currentProgram ?: return@launch
             val segments = program.segments
-            val onSetSpeed = onSetSpeedRef ?: return@launch
-            val onSetIncline = onSetInclineRef ?: { _: Double -> }
 
             // Если это resume (мы уже в середине сегмента) — сразу вернём команды
-            if (_state.value.segmentElapsedSec > 0 && _state.value.currentSegmentIndex < segments.size) {
+            if (_state.value.segmentElapsedSec > 0 &&
+                _state.value.currentSegmentIndex < segments.size
+            ) {
                 val seg = segments[_state.value.currentSegmentIndex]
                 onSetSpeed(seg.speedKmh)
                 onSetIncline(seg.inclinePercent)
