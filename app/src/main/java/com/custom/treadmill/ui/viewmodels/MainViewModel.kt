@@ -43,11 +43,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _treadmillState = MutableStateFlow(BleConnectionState.DISCONNECTED)
     val treadmillState: StateFlow<BleConnectionState> = _treadmillState.asStateFlow()
 
-    // НОВОЕ: название подключённой дорожки
     private val _treadmillName = MutableStateFlow<String?>(null)
     val treadmillName: StateFlow<String?> = _treadmillName.asStateFlow()
 
-    // НОВОЕ: имя пульсометра
     private val _hrName = MutableStateFlow<String?>(null)
     val hrName: StateFlow<String?> = _hrName.asStateFlow()
 
@@ -91,6 +89,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var hrSum = 0L; private var hrCount = 0L; private var hrMax = 0
     private var speedSum = 0.0; private var speedCount = 0L
+
+    /** Проверка: дорожка готова к командам. */
+    fun isTreadmillReady(): Boolean =
+        _treadmillState.value == BleConnectionState.READY
 
     init {
         viewModelScope.launch { ble.scanLog.collect { addLog(it) } }
@@ -136,9 +138,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun connectTreadmill(device: BluetoothDevice) {
         disconnectTreadmill()
-        // Сохраняем имя сразу (до подключения)
         _treadmillName.value = try { device.name } catch (_: SecurityException) { null }
-            ?: "Неизвестная дорожка"
+            ?: "Дорожка"
 
         val conn = BleConnection(getApplication(), "TR")
         treadmillConn = conn
@@ -148,8 +149,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _treadmillState.value = state
                 if (state == BleConnectionState.READY) onTreadmillReady(conn)
                 if (state == BleConnectionState.DISCONNECTED && protocol != null) {
-                    _statusMessage.value = "Дорожка отключена"
-                    workoutManager.stop()
+                    _statusMessage.value = "Дорожка отключена — тренировка на паузе"
+                    // Автопауза тренировки
+                    if (workoutManager.state.value.running && !workoutManager.state.value.paused) {
+                        workoutManager.pause()
+                    }
                     setAutoHrEnabled(false)
                 }
             }
@@ -193,8 +197,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun connectHeartRate(device: BluetoothDevice) {
         disconnectHeartRate()
-        _hrName.value = try { device.name } catch (_: SecurityException) { null }
-            ?: "Пульсометр"
+        _hrName.value = try { device.name } catch (_: SecurityException) { null } ?: "Пульсометр"
 
         val conn = BleConnection(getApplication(), "HR")
         hrConn = conn
@@ -249,14 +252,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { protocol?.setIncline(safe) }
     }
 
-    fun startTreadmill() { viewModelScope.launch { protocol?.start() } }
-    fun stopTreadmill() { viewModelScope.launch { protocol?.stop() } }
+    /** Старт дорожки. Только если подключена. */
+    fun startTreadmill() {
+        if (!isTreadmillReady()) {
+            _statusMessage.value = "Сначала подключите дорожку"
+            return
+        }
+        viewModelScope.launch { protocol?.start() }
+    }
 
+    /** Стоп дорожки. */
+    fun stopTreadmill() {
+        if (!isTreadmillReady()) return
+        viewModelScope.launch { protocol?.stop() }
+    }
+
+    /**
+     * Экстренная остановка. Дорожка останавливается.
+     * Если тренировка шла — ставится на паузу, чтобы можно было продолжить.
+     */
     fun emergencyStop() {
+        if (!isTreadmillReady()) {
+            _statusMessage.value = "Дорожка не подключена"
+            return
+        }
         viewModelScope.launch {
+            if (workoutManager.state.value.running && !workoutManager.state.value.paused) {
+                workoutManager.pause()
+            }
             protocol?.stop()
             protocol?.setIncline(0.0)
-            workoutManager.stop()
             setAutoHrEnabled(false)
             _statusMessage.value = "ЭКСТРЕННАЯ ОСТАНОВКА"
             _targetSpeed.value = 0.0
@@ -285,6 +310,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val cfg = settingsStore.settings.value
                 delay(cfg.intervalSec.coerceAtLeast(5) * 1000L)
                 if (!cfg.hrEnabled) continue
+                if (!isTreadmillReady()) continue
                 val hr = _heartRate.value
                 if (hr <= 0) continue
                 val cur = _targetSpeed.value
@@ -297,13 +323,53 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun stopHrAutoLoop() { hrAutoJob?.cancel(); hrAutoJob = null }
 
+    /** Запуск программы. Только если дорожка подключена. */
     fun startWorkout(program: ProgramData) {
-        resetStats(); resetHrHistory()
+        if (!isTreadmillReady()) {
+            _statusMessage.value = "Сначала подключите дорожку"
+            return
+        }
+        resetStats()
+        resetHrHistory()
         workoutManager.start(
             scope = viewModelScope, program = program,
             onSetSpeed = { setSpeed(it) },
             onSetIncline = { setIncline(it) }
         )
+    }
+
+    fun pauseWorkout() {
+        if (!workoutManager.state.value.running) return
+        workoutManager.pause()
+        // Останавливаем дорожку — человек должен остановиться
+        if (isTreadmillReady()) {
+            viewModelScope.launch { protocol?.stop() }
+        }
+        _statusMessage.value = "Тренировка на паузе"
+    }
+
+    fun resumeWorkout() {
+        if (!workoutManager.state.value.paused) return
+        if (!isTreadmillReady()) {
+            _statusMessage.value = "Дорожка не подключена — не могу продолжить"
+            return
+        }
+        // Сначала запустим дорожку
+        viewModelScope.launch {
+            protocol?.start()
+            // Небольшая пауза, чтобы дорожка встала в режим
+            delay(200)
+            // Команды скорости/наклона отправятся автоматически из WorkoutManager
+            workoutManager.resume()
+        }
+    }
+
+    fun togglePauseWorkout() {
+        val s = workoutManager.state.value
+        when {
+            s.paused -> resumeWorkout()
+            s.running -> pauseWorkout()
+        }
     }
 
     fun stopWorkout() = workoutManager.stop()
