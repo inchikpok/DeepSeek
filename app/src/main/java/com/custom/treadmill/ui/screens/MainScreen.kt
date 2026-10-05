@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,6 +47,8 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val settings by vm.settings.collectAsState()
 
     var permsGranted by remember { mutableStateOf(hasBlePermissions(ctx)) }
+    var menuOpen by remember { mutableStateOf(false) }
+
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permsGranted = hasBlePermissions(ctx) }
@@ -56,156 +59,200 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp)
-        ) {
-            Spacer(Modifier.height(10.dp))
-            Text("Treadmill Control", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text(
-                "UNixFit-990x · FTMS",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(10.dp))
+        Box(Modifier.fillMaxSize()) {
 
-            // ---------- Статусы ----------
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactStatus(
-                    label = "Дорожка",
-                    state = treadmillState,
-                    onConnect = { vm.startScanTreadmill() },
-                    onDisconnect = { vm.disconnectTreadmill() },
-                    modifier = Modifier.weight(1f)
-                )
-                CompactStatus(
-                    label = "Пульсометр",
-                    state = hrState,
-                    onConnect = { vm.startScanHeartRate() },
-                    onDisconnect = { vm.disconnectHeartRate() },
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp)
+            ) {
+                Spacer(Modifier.height(6.dp))
 
-            Spacer(Modifier.height(8.dp))
-
-            // ---------- Плитки управления ----------
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ControlTile(
-                    label = "Скорость",
-                    value = "%.1f".format(targetSpeed),
-                    unit = "км/ч",
-                    onMinus = { vm.setSpeed(targetSpeed - 0.5) },
-                    onPlus = { vm.setSpeed(targetSpeed + 0.5) },
-                    modifier = Modifier.weight(1f)
-                )
-                ControlTile(
-                    label = "Наклон",
-                    value = "${targetIncline.roundToInt()}",
-                    unit = "%",
-                    onMinus = { vm.setIncline(max(0.0, targetIncline.roundToInt() - 1.0)) },
-                    onPlus = { vm.setIncline(targetIncline.roundToInt() + 1.0) },
-                    onReset = { vm.setIncline(0.0) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // ---------- Метрики ----------
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Row(Modifier.fillMaxWidth()) {
-                        MetricBlock("Пульс", if (hr > 0) "$hr" else "—", "уд/мин", Modifier.weight(1f))
-                        MetricBlock("Время", formatTime(data.elapsedSec), "", Modifier.weight(1f))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Row(Modifier.fillMaxWidth()) {
-                        MetricBlock("Дистанция", "%.2f".format(data.distanceKm), "км", Modifier.weight(1f))
-                        MetricBlock("Калории", "${data.calories}", "ккал", Modifier.weight(1f))
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // ---------- Автопульс (с рабочим Switch) ----------
-            Card(Modifier.fillMaxWidth()) {
+                // ---------- Заголовок с меню ----------
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "Авторегулировка по пульсу",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
+                            "Treadmill Control",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
                         )
                         Text(
-                            if (settings.hrEnabled)
-                                "Цель: ${settings.targetHr} уд/мин"
-                            else "Выключена",
-                            fontSize = 11.sp,
+                            "UNixFit-990x · FTMS",
+                            fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    TextButton(
-                        onClick = { onNavigate(Routes.SETTINGS) },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text("Настроить", fontSize = 12.sp)
+                    Box {
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Меню")
+                        }
+                        DropdownMenu(
+                            expanded = menuOpen,
+                            onDismissRequest = { menuOpen = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Debug (BLE)") },
+                                onClick = {
+                                    menuOpen = false
+                                    onNavigate(Routes.DEBUG)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("О программе") },
+                                onClick = {
+                                    menuOpen = false
+                                    onNavigate(Routes.ABOUT)
+                                }
+                            )
+                        }
                     }
-                    Switch(
-                        checked = settings.hrEnabled,
-                        onCheckedChange = { vm.setAutoHrEnabled(it) }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // ---------- Статусы ----------
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CompactStatus(
+                        label = "Дорожка",
+                        state = treadmillState,
+                        onConnect = { vm.startScanTreadmill() },
+                        onDisconnect = { vm.disconnectTreadmill() },
+                        modifier = Modifier.weight(1f)
+                    )
+                    CompactStatus(
+                        label = "Пульсометр",
+                        state = hrState,
+                        onConnect = { vm.startScanHeartRate() },
+                        onDisconnect = { vm.disconnectHeartRate() },
+                        modifier = Modifier.weight(1f)
                     )
                 }
-            }
 
-            Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
 
-            // ---------- Старт / Стоп ----------
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { vm.startTreadmill() },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 12.dp)
-                ) { Text("Старт", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
-                Button(
-                    onClick = { vm.stopTreadmill() },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                // ---------- Плитки управления ----------
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ControlTile(
+                        label = "Скорость",
+                        value = "%.1f".format(targetSpeed),
+                        unit = "км/ч",
+                        onMinus = { vm.setSpeed(targetSpeed - 0.5) },
+                        onPlus = { vm.setSpeed(targetSpeed + 0.5) },
+                        modifier = Modifier.weight(1f)
                     )
-                ) { Text("Стоп", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                    ControlTile(
+                        label = "Наклон",
+                        value = "${targetIncline.roundToInt()}",
+                        unit = "%",
+                        onMinus = { vm.setIncline(max(0.0, targetIncline.roundToInt() - 1.0)) },
+                        onPlus = { vm.setIncline(targetIncline.roundToInt() + 1.0) },
+                        onReset = { vm.setIncline(0.0) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                // ---------- Метрики ----------
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp)) {
+                        Row(Modifier.fillMaxWidth()) {
+                            MetricBlock("Пульс", if (hr > 0) "$hr" else "—", "уд/мин", Modifier.weight(1f))
+                            MetricBlock("Время", formatTime(data.elapsedSec), "", Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(Modifier.fillMaxWidth()) {
+                            MetricBlock("Дистанция", "%.2f".format(data.distanceKm), "км", Modifier.weight(1f))
+                            MetricBlock("Калории", "${data.calories}", "ккал", Modifier.weight(1f))
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                // ---------- Автопульс ----------
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Автопульс",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                if (settings.hrEnabled)
+                                    "Цель: ${settings.targetHr} уд/мин"
+                                else "Выключен",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        TextButton(
+                            onClick = { onNavigate(Routes.SETTINGS) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("Настроить", fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = settings.hrEnabled,
+                            onCheckedChange = { vm.setAutoHrEnabled(it) }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                // ---------- Старт / Стоп ----------
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { vm.startTreadmill() },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) { Text("Старт", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                    Button(
+                        onClick = { vm.stopTreadmill() },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) { Text("Стоп", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                // ---------- Экстренный стоп ----------
+                Button(
+                    onClick = { vm.emergencyStop() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
+                    contentPadding = PaddingValues(vertical = 10.dp)
+                ) { Text("ЭКСТРЕННАЯ ОСТАНОВКА", fontWeight = FontWeight.Bold) }
+
+                Spacer(Modifier.height(10.dp))
             }
 
-            Spacer(Modifier.height(8.dp))
-
-            // ---------- Экстренный стоп ----------
-            Button(
-                onClick = { vm.emergencyStop() },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-                contentPadding = PaddingValues(vertical = 10.dp)
-            ) { Text("ЭКСТРЕННАЯ ОСТАНОВКА", fontWeight = FontWeight.Bold) }
-
-            Spacer(Modifier.height(10.dp))
-
-            NavButton("Debug (BLE)") { onNavigate(Routes.DEBUG) }
-            NavButton("О программе") { onNavigate(Routes.ABOUT) }
-
+            // ---------- Всплывающее сообщение внизу ----------
             statusMessage?.let { msg ->
-                Spacer(Modifier.height(10.dp))
-                Card(colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                )) {
+                Card(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    )
+                ) {
                     Row(
-                        Modifier.fillMaxWidth().padding(10.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(msg, modifier = Modifier.weight(1f), fontSize = 13.sp)
@@ -213,8 +260,6 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     }
                 }
             }
-
-            Spacer(Modifier.height(16.dp))
         }
     }
 
@@ -252,14 +297,14 @@ private fun CompactStatus(
         BleConnectionState.CONNECTED,
         BleConnectionState.DISCOVERING -> Color(0xFFF9A825) to "подключение…"
         BleConnectionState.FAILED -> Color(0xFFC62828) to "ошибка"
-        BleConnectionState.DISCONNECTED -> Color(0xFF9E9E9E) to "не подключено"
+        BleConnectionState.DISCONNECTED -> Color(0xFF9E9E9E) to "нет"
     }
     val connected = state == BleConnectionState.READY
 
     Card(modifier = modifier, elevation = CardDefaults.cardElevation(1.dp)) {
-        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(8.dp)) {}
+                Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(7.dp)) {}
                 Spacer(Modifier.width(6.dp))
                 Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
@@ -269,18 +314,18 @@ private fun CompactStatus(
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             if (connected) {
                 OutlinedButton(
                     onClick = onDisconnect,
                     modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(vertical = 4.dp)
+                    contentPadding = PaddingValues(vertical = 2.dp)
                 ) { Text("Откл.", fontSize = 12.sp) }
             } else {
                 Button(
                     onClick = onConnect,
                     modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(vertical = 4.dp)
+                    contentPadding = PaddingValues(vertical = 2.dp)
                 ) { Text("Подкл.", fontSize = 12.sp) }
             }
         }
@@ -299,59 +344,59 @@ private fun ControlTile(
 ) {
     Card(modifier = modifier, elevation = CardDefaults.cardElevation(3.dp)) {
         Column(
-            Modifier.fillMaxWidth().padding(10.dp),
+            Modifier.fillMaxWidth().padding(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 label.uppercase(),
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.Medium,
                 letterSpacing = 1.sp
             )
-            Spacer(Modifier.height(2.dp))
             Row(
                 verticalAlignment = Alignment.Bottom,
                 modifier = Modifier.padding(vertical = 2.dp)
             ) {
                 Text(
                     value,
-                    fontSize = 36.sp,
+                    fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
                     unit,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
             }
             Spacer(Modifier.height(2.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilledTonalButton(
                     onClick = onMinus,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    contentPadding = PaddingValues(0.dp)
                 ) {
-                    Icon(Icons.Default.Remove, contentDescription = "Меньше")
+                    Icon(Icons.Default.Remove, contentDescription = "Меньше", modifier = Modifier.size(18.dp))
                 }
                 FilledTonalButton(
                     onClick = onPlus,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    contentPadding = PaddingValues(0.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Больше")
+                    Icon(Icons.Default.Add, contentDescription = "Больше", modifier = Modifier.size(18.dp))
                 }
             }
             if (onReset != null) {
-                Spacer(Modifier.height(2.dp))
                 TextButton(
                     onClick = onReset,
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(vertical = 2.dp)
-                ) { Text("Сбросить", fontSize = 11.sp) }
+                    modifier = Modifier.height(20.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) { Text("Сбросить", fontSize = 10.sp) }
+            } else {
+                Spacer(Modifier.height(20.dp))
             }
         }
     }
@@ -365,23 +410,15 @@ private fun MetricBlock(
     modifier: Modifier = Modifier
 ) {
     Column(modifier) {
-        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(verticalAlignment = Alignment.Bottom) {
             Text(value, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             if (unit.isNotEmpty()) {
                 Spacer(Modifier.width(3.dp))
-                Text(unit, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
+                Text(unit, fontSize = 10.sp, modifier = Modifier.padding(bottom = 3.dp))
             }
         }
     }
-}
-
-@Composable
-private fun NavButton(text: String, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-    ) { Text(text) }
 }
 
 @Composable
