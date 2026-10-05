@@ -19,14 +19,23 @@ class FitShowProprietaryProtocol(
     override val data: StateFlow<TreadmillData> = _data.asStateFlow()
 
     private var conn: BleConnection? = null
-
     private var writeUuid: UUID? = null
     override val writeCharacteristicUuid: UUID? get() = writeUuid
-
     private var notifyUuid: UUID? = null
 
     var speedScale: Double = 10.0
-    var inclineScale: Double = 10.0
+
+    /** Какую команду наклона использовать. Меняется через Debug-экран. */
+    var inclineCommandMode: InclineCommandMode = InclineCommandMode.A4_BYTE
+
+    enum class InclineCommandMode {
+        A4_BYTE,        // A4 XX                          (XX = %)
+        A4_BYTE_10X,    // A4 XX                          (XX = % * 10)
+        A4_01_BYTE,     // A4 01 XX
+        A4_BYTE_SIGN,   // A4 XX                          (XX = % signed)
+        B0_BYTE,        // B0 XX
+        A5_BYTE         // A5 XX
+    }
 
     override suspend fun initialize(conn: BleConnection): Boolean {
         this.conn = conn
@@ -96,19 +105,42 @@ class FitShowProprietaryProtocol(
         return conn?.write(uuid, byteArrayOf(0xA3.toByte(), raw), true) ?: false
     }
 
-    /**
-     * Гипотетическая команда наклона: 0xA4 + байт (percent * inclineScale).
-     * Реальный протокол FitShow может отличаться — калибруется через Debug.
-     */
     override suspend fun setIncline(percent: Double): Boolean {
-        val uuid = writeUuid ?: return false
-        val raw = (percent * inclineScale).toInt().coerceIn(0, 255).toByte()
-        return conn?.write(uuid, byteArrayOf(0xA4.toByte(), raw), true) ?: false
+        val uuid = writeUuid ?: run {
+            Log.w("FitShow", "setIncline: характеристика записи не найдена")
+            return false
+        }
+        val cmd = buildInclineCommand(inclineCommandMode, percent)
+        Log.d("FitShow", "setIncline $percent% mode=$inclineCommandMode → ${cmd.toHex()}")
+        return conn?.write(uuid, cmd, true) ?: false
+    }
+
+    private fun buildInclineCommand(mode: InclineCommandMode, percent: Double): ByteArray {
+        val p = percent.coerceIn(-10.0, 20.0)
+        return when (mode) {
+            InclineCommandMode.A4_BYTE ->
+                byteArrayOf(0xA4.toByte(), p.toInt().coerceIn(0, 255).toByte())
+
+            InclineCommandMode.A4_BYTE_10X ->
+                byteArrayOf(0xA4.toByte(), (p * 10).toInt().coerceIn(0, 255).toByte())
+
+            InclineCommandMode.A4_01_BYTE ->
+                byteArrayOf(0xA4.toByte(), 0x01, p.toInt().coerceIn(0, 255).toByte())
+
+            InclineCommandMode.A4_BYTE_SIGN ->
+                byteArrayOf(0xA4.toByte(), p.toInt().coerceIn(-128, 127).toByte())
+
+            InclineCommandMode.B0_BYTE ->
+                byteArrayOf(0xB0.toByte(), p.toInt().coerceIn(0, 255).toByte())
+
+            InclineCommandMode.A5_BYTE ->
+                byteArrayOf(0xA5.toByte(), p.toInt().coerceIn(0, 255).toByte())
+        }
     }
 
     override fun onNotification(n: BleNotification) {
         if (n.characteristicUuid == notifyUuid) {
-            Log.d("FitShow", "notify ${n.value.toHex()}")
+            Log.d("FitShow", "← notify ${n.value.toHex()}")
         }
     }
 }
