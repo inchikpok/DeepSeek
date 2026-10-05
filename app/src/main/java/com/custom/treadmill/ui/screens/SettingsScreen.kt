@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp                                  // ← ДОБАВЛЕНО
 import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.data.repository.ProtocolType
 import com.custom.treadmill.data.repository.ThemeMode
@@ -39,7 +40,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: (() -> Unit)? = null) {
         if (onBack != null) {
             TextButton(onClick = onBack) { Text("← Назад") }
         }
-        Text("Настройки", fontWeight = FontWeight.Bold, fontSize = 20.dp.value.sp())
+        Text("Настройки", fontWeight = FontWeight.Bold, fontSize = 20.sp)   // ← 20.sp (не dp.value.sp())
 
         Spacer(Modifier.height(12.dp))
 
@@ -288,5 +289,3 @@ fun SettingsScreen(vm: MainViewModel, onBack: (() -> Unit)? = null) {
         Spacer(Modifier.height(20.dp))
     }
 }
-
-private fun Int.sp() = this.toString()
