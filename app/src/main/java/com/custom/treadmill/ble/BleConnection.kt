@@ -10,13 +10,16 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 enum class BleConnectionState {
     DISCONNECTED, CONNECTING, CONNECTED, DISCOVERING, READY, FAILED
@@ -49,6 +52,9 @@ class BleConnection(
 
     private val _characteristics = MutableStateFlow<List<GattCharInfo>>(emptyList())
     val characteristics: StateFlow<List<GattCharInfo>> = _characteristics.asStateFlow()
+
+    /** Ожидающие чтения: uuid → отложенный результат. */
+    private val pendingReads = ConcurrentHashMap<UUID, CompletableDeferred<ByteArray?>>()
 
     private fun log(msg: String) {
         Log.d(tag, msg)
@@ -88,6 +94,32 @@ class BleConnection(
             _state.value = BleConnectionState.READY
         }
 
+        // ---- Чтение характеристики (API 33+) ----
+        override fun onCharacteristicRead(
+            g: BluetoothGatt,
+            c: BluetoothGattCharacteristic,
+            value: ByteArray,
+            status: Int
+        ) {
+            val result = if (status == BluetoothGatt.GATT_SUCCESS) value else null
+            log("read ${c.uuid} status=$status value=${value.toHex()}")
+            pendingReads.remove(c.uuid)?.complete(result)
+        }
+
+        // ---- Чтение характеристики (API < 33) ----
+        @Deprecated("Deprecated in Java")
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicRead(
+            g: BluetoothGatt,
+            c: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            val result = if (status == BluetoothGatt.GATT_SUCCESS) c.value else null
+            log("read ${c.uuid} status=$status value=${result?.toHex()}")
+            pendingReads.remove(c.uuid)?.complete(result)
+        }
+
+        // ---- Уведомления (API 33+) ----
         override fun onCharacteristicChanged(
             g: BluetoothGatt,
             c: BluetoothGattCharacteristic,
@@ -97,6 +129,7 @@ class BleConnection(
             _notifications.tryEmit(BleNotification(c.uuid, value))
         }
 
+        // ---- Уведомления (API < 33) ----
         @Deprecated("Deprecated in Java")
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) {
@@ -145,6 +178,8 @@ class BleConnection(
         } catch (_: Exception) {
         }
         gatt = null
+        pendingReads.values.forEach { it.complete(null) }
+        pendingReads.clear()
         _state.value = BleConnectionState.DISCONNECTED
     }
 
@@ -195,6 +230,33 @@ class BleConnection(
             log("Ошибка setNotify: ${e.message}")
             false
         }
+    }
+
+    /**
+     * Чтение значения характеристики (подвешивает на 2 сек).
+     * Возвращает null при ошибке или таймауте.
+     */
+    suspend fun read(uuid: UUID): ByteArray? {
+        val g = gatt ?: return null
+        val c = findCharacteristic(uuid) ?: run {
+            log("read: характеристика $uuid не найдена")
+            return null
+        }
+        val deferred = CompletableDeferred<ByteArray?>()
+        pendingReads[uuid] = deferred
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                g.readCharacteristic(c)
+            } else {
+                @Suppress("DEPRECATION")
+                g.readCharacteristic(c)
+            }
+        } catch (e: Exception) {
+            log("Ошибка read: ${e.message}")
+            pendingReads.remove(uuid)
+            return null
+        }
+        return withTimeoutOrNull(2000L) { deferred.await() }
     }
 
     fun write(uuid: UUID, data: ByteArray, withResponse: Boolean = true): Boolean {
