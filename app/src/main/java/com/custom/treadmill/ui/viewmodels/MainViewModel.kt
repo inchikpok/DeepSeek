@@ -21,6 +21,7 @@ import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.data.repository.ProtocolType
 import com.custom.treadmill.logic.HeartRateController
 import com.custom.treadmill.logic.WorkoutManager
+import com.custom.treadmill.ui.components.HrPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,6 +58,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _heartRate = MutableStateFlow(0)
     val heartRate: StateFlow<Int> = _heartRate.asStateFlow()
 
+    // История пульса для графика — храним последние 30 минут
+    private val _hrHistory = MutableStateFlow<List<HrPoint>>(emptyList())
+    val hrHistory: StateFlow<List<HrPoint>> = _hrHistory.asStateFlow()
+
     private val _scanResults = MutableStateFlow<List<ScanResult>>(emptyList())
     val scanResults: StateFlow<List<ScanResult>> = _scanResults.asStateFlow()
 
@@ -88,6 +93,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (hr > 0) {
                     hrSum += hr; hrCount++
                     if (hr > hrMax) hrMax = hr
+                    // Добавляем точку на график (не чаще, чем раз в 1 с)
+                    val now = System.currentTimeMillis()
+                    val list = _hrHistory.value
+                    val last = list.lastOrNull()
+                    if (last == null || now - last.timestamp >= 900L) {
+                        val cutoff = now - 30 * 60 * 1000L
+                        _hrHistory.value = (list + HrPoint(now, hr))
+                            .filter { it.timestamp >= cutoff }
+                    }
                 }
             }
         }
@@ -97,6 +111,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    fun resetHrHistory() { _hrHistory.value = emptyList() }
 
     fun startScanTreadmill() { _scanMode.value = ScanMode.TREADMILL; ble.startScan() }
     fun startScanHeartRate() { _scanMode.value = ScanMode.HEART_RATE; ble.startScan() }
@@ -260,6 +276,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startWorkout(program: ProgramData) {
         resetStats()
+        resetHrHistory()
         workoutManager.start(
             scope = viewModelScope,
             program = program,
