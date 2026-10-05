@@ -70,14 +70,11 @@ import com.custom.treadmill.ui.viewmodels.ProgramViewModel
 
 enum class SortMode { NAME_ASC, NAME_DESC, NEWEST }
 
-// ================================================================
-//  Список программ
-// ================================================================
 @Composable
 fun ProgramsScreen(
     mainVm: MainViewModel,
     programVm: ProgramViewModel,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     onStartWorkout: (ProgramData) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -89,7 +86,6 @@ fun ProgramsScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var sortMode by rememberSaveable { mutableStateOf(SortMode.NAME_ASC) }
 
-    // ---------- Экспорт ----------
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -103,7 +99,6 @@ fun ProgramsScreen(
         }
     }
 
-    // ---------- Импорт ----------
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -118,7 +113,6 @@ fun ProgramsScreen(
         }
     }
 
-    // ---------- Фильтр + сортировка ----------
     val visible = remember(programs, searchQuery, sortMode) {
         val q = searchQuery.trim().lowercase()
         val filtered = if (q.isEmpty()) programs
@@ -133,19 +127,19 @@ fun ProgramsScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        // ---------- Шапка ----------
         Column(Modifier.padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack, contentPadding = PaddingValues(4.dp)) {
-                    Text("← Назад")
+                if (onBack != null) {
+                    TextButton(onClick = onBack, contentPadding = PaddingValues(4.dp)) {
+                        Text("← Назад")
+                    }
+                    Spacer(Modifier.width(8.dp))
                 }
-                Spacer(Modifier.width(8.dp))
                 Text("Программы", fontWeight = FontWeight.Bold, fontSize = 22.sp)
             }
             Spacer(Modifier.height(12.dp))
 
-            // Кнопки создания
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -170,7 +164,6 @@ fun ProgramsScreen(
 
             Spacer(Modifier.height(10.dp))
 
-            // Поиск
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -189,7 +182,6 @@ fun ProgramsScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            // Сортировка
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -204,18 +196,14 @@ fun ProgramsScreen(
             Spacer(Modifier.height(12.dp))
         }
 
-        // ---------- Список ----------
         if (visible.isEmpty()) {
             Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
+                Modifier.fillMaxSize().padding(32.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        if (programs.isEmpty()) "У вас пока нет программ"
-                        else "Ничего не найдено",
+                        if (programs.isEmpty()) "У вас пока нет программ" else "Ничего не найдено",
                         fontWeight = FontWeight.SemiBold, fontSize = 16.sp
                     )
                     Spacer(Modifier.height(6.dp))
@@ -243,7 +231,6 @@ fun ProgramsScreen(
                         data = data,
                         onEdit = { editingId = p.id; editingData = data },
                         onDuplicate = {
-                            // Сохраняем копию с новым id
                             val copy = data.copy(name = "${data.name} (копия)")
                             programVm.save(copy, 0L)
                         },
@@ -259,34 +246,26 @@ fun ProgramsScreen(
         }
     }
 
-    // ---------- Диалог шаблонов ----------
     if (showTemplates) {
         TemplatesDialog(
             onPick = { template ->
                 showTemplates = false
-                if (template == null) {
-                    // С нуля
-                    editingId = 0L
-                    editingData = ProgramData(
-                        name = "Новая программа",
-                        description = "",
-                        segments = listOf(
-                            ProgramSegment(300, 5.0, 0.0, "Разминка"),
-                            ProgramSegment(120, 10.0, 0.0, "Интервал 1"),
-                            ProgramSegment(120, 6.0, 0.0, "Отдых"),
-                            ProgramSegment(300, 4.0, 0.0, "Заминка")
-                        )
+                editingId = 0L
+                editingData = template ?: ProgramData(
+                    name = "Новая программа",
+                    description = "",
+                    segments = listOf(
+                        ProgramSegment(300, 5.0, 0.0, "Разминка"),
+                        ProgramSegment(120, 10.0, 0.0, "Интервал 1"),
+                        ProgramSegment(120, 6.0, 0.0, "Отдых"),
+                        ProgramSegment(300, 4.0, 0.0, "Заминка")
                     )
-                } else {
-                    editingId = 0L
-                    editingData = template
-                }
+                )
             },
             onDismiss = { showTemplates = false }
         )
     }
 
-    // ---------- Редактор ----------
     editingData?.let { data ->
         val isNew = editingId == 0L
         ProgramEditorScreen(
@@ -305,9 +284,6 @@ fun ProgramsScreen(
     }
 }
 
-// ================================================================
-//  Чип сортировки
-// ================================================================
 @Composable
 private fun SortChip(text: String, selected: Boolean, onClick: () -> Unit) {
     if (selected) {
@@ -323,9 +299,6 @@ private fun SortChip(text: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-// ================================================================
-//  Диалог выбора шаблона
-// ================================================================
 @Composable
 private fun TemplatesDialog(
     onPick: (ProgramData?) -> Unit,
@@ -342,7 +315,7 @@ private fun TemplatesDialog(
                 TextButton(
                     onClick = { onPick(null) },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Пустая (с нуля)", modifier = Modifier.fillMaxWidth()) }
+                ) { Text("Пустая (с нуля)") }
                 Spacer(Modifier.height(4.dp))
                 templates.forEach { (title, data) ->
                     TextButton(
@@ -448,9 +421,6 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
     )
 }
 
-// ================================================================
-//  Карточка программы
-// ================================================================
 @Composable
 private fun ProgramCard(
     entity: ProgramEntity,
@@ -554,9 +524,6 @@ private fun StatChip(text: String) {
     }
 }
 
-// ================================================================
-//  UI-состояние сегмента
-// ================================================================
 private data class SegmentEdit(
     val name: String = "",
     val durationStr: String = "60",
@@ -564,9 +531,6 @@ private data class SegmentEdit(
     val inclineStr: String = "0.0"
 )
 
-// ================================================================
-//  Полноэкранный редактор
-// ================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProgramEditorScreen(
@@ -733,9 +697,6 @@ private fun ProgramEditorScreen(
     }
 }
 
-// ================================================================
-//  Редактор одного сегмента
-// ================================================================
 @Composable
 private fun SegmentEditor(
     index: Int,
@@ -750,7 +711,6 @@ private fun SegmentEditor(
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(10.dp)) {
-            // Верхняя строка: номер + кнопки управления
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -760,50 +720,33 @@ private fun SegmentEditor(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
-                // ↑
                 IconButton(
                     onClick = onMoveUp,
                     enabled = index > 0,
                     modifier = Modifier.size(32.dp)
                 ) {
-                    Icon(
-                        Icons.Default.ArrowUpward,
-                        contentDescription = "Вверх",
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Icon(Icons.Default.ArrowUpward, contentDescription = "Вверх",
+                        modifier = Modifier.size(18.dp))
                 }
-                // ↓
                 IconButton(
                     onClick = onMoveDown,
                     enabled = index < total - 1,
                     modifier = Modifier.size(32.dp)
                 ) {
-                    Icon(
-                        Icons.Default.ArrowDownward,
-                        contentDescription = "Вниз",
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Icon(Icons.Default.ArrowDownward, contentDescription = "Вниз",
+                        modifier = Modifier.size(18.dp))
                 }
-                // Копировать
-                IconButton(
-                    onClick = onDuplicate,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.ContentCopy,
-                        contentDescription = "Копировать",
-                        modifier = Modifier.size(18.dp)
-                    )
+                IconButton(onClick = onDuplicate, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Копировать",
+                        modifier = Modifier.size(18.dp))
                 }
-                // Удалить
                 IconButton(
                     onClick = onDelete,
                     enabled = canDelete,
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Удалить",
+                        Icons.Default.Delete, contentDescription = "Удалить",
                         modifier = Modifier.size(18.dp),
                         tint = if (canDelete) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.onSurfaceVariant
@@ -853,9 +796,6 @@ private fun SegmentEditor(
     }
 }
 
-// ================================================================
-//  Утилиты
-// ================================================================
 private fun filterNumeric(s: String): String = s.filter { it.isDigit() }
 
 private fun filterDecimal(s: String): String =
