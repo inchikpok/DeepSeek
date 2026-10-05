@@ -131,10 +131,10 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
             )
             ControlTile(
                 label = "Наклон",
-                value = "%.1f".format(data.inclinePercent),
+                value = "%.0f".format(data.inclinePercent),   // без десятых
                 unit = "%",
-                onMinus = { vm.setIncline(data.inclinePercent - settings.inclineStep) },
-                onPlus = { vm.setIncline(data.inclinePercent + settings.inclineStep) },
+                onMinus = { vm.setIncline(Math.max(0.0, Math.round(data.inclinePercent) - 1.0)) },
+                onPlus  = { vm.setIncline(Math.round(data.inclinePercent) + 1.0) },
                 onReset = { vm.setIncline(0.0) },
                 modifier = Modifier.weight(1f)
             )
