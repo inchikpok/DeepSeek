@@ -28,7 +28,7 @@ class FTMSProtocol : ITreadmillProtocol {
     private var controlPointUuid: UUID? = null
     override val writeCharacteristicUuid: UUID? get() = controlPointUuid
 
-    // ---- Коалесцирующие отправители ----
+    // ---- Коалесцирующие отправители с повтором ----
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val sendMutex = Mutex()
     private val desiredSpeed = MutableStateFlow<Double?>(null)
@@ -40,8 +40,14 @@ class FTMSProtocol : ITreadmillProtocol {
     /** Задержка после последнего нажатия перед отправкой (мс). */
     var debounceMs: Long = 250L
 
-    /** Пауза после отправки команды перед следующей (мс). */
-    var commandGapMs: Long = 600L
+    /** Пауза после успешной отправки команды (мс). */
+    var commandGapMs: Long = 400L
+
+    /** Сколько ждать подтверждения от дорожки (мс). */
+    var confirmTimeoutMs: Long = 2500L
+
+    /** Максимум попыток отправки (1 + 2 повтора). */
+    var maxAttempts: Int = 3
 
     /** Округлять наклон до целых %. */
     var roundInclineToWhole: Boolean = true
@@ -83,32 +89,83 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     private fun startSenders() {
-        // Отправитель скорости — collectLatest отменяет предыдущий при новом значении
+        // ---------- Отправитель СКОРОСТИ ----------
         scope.launch {
             desiredSpeed.filterNotNull().collectLatest { target ->
                 if (abs(target - lastSentSpeed) < 0.01) return@collectLatest
                 delay(debounceMs)
-                sendMutex.withLock {
-                    if (abs(target - lastSentSpeed) < 0.01) return@withLock
-                    sendSpeedNow(target)
+
+                var confirmed = false
+                var attempt = 1
+                while (attempt <= maxAttempts && !confirmed) {
+                    sendMutex.withLock {
+                        sendSpeedNow(target)
+                    }
                     lastSentSpeed = target
+                    confirmed = waitForSpeed(target, confirmTimeoutMs)
+                    if (!confirmed) {
+                        Log.w("FTMS", "Speed $target не подтверждена (попытка $attempt)")
+                        attempt++
+                        delay(150)
+                    }
+                }
+                if (confirmed) {
+                    Log.d("FTMS", "✓ speed $target км/ч (попыток: $attempt)")
+                } else {
+                    Log.e("FTMS", "✗ speed $target не удалось после $maxAttempts попыток")
                 }
                 delay(commandGapMs)
             }
         }
-        // Отправитель наклона
+
+        // ---------- Отправитель НАКЛОНА ----------
         scope.launch {
             desiredIncline.filterNotNull().collectLatest { target ->
                 if (abs(target - lastSentIncline) < 0.01) return@collectLatest
                 delay(debounceMs)
-                sendMutex.withLock {
-                    if (abs(target - lastSentIncline) < 0.01) return@withLock
-                    sendInclineNow(target)
+
+                var confirmed = false
+                var attempt = 1
+                while (attempt <= maxAttempts && !confirmed) {
+                    sendMutex.withLock {
+                        sendInclineNow(target)
+                    }
                     lastSentIncline = target
+                    confirmed = waitForIncline(target, confirmTimeoutMs)
+                    if (!confirmed) {
+                        Log.w("FTMS", "Incline $target% не подтверждён (попытка $attempt)")
+                        attempt++
+                        delay(150)
+                    }
+                }
+                if (confirmed) {
+                    Log.d("FTMS", "✓ incline $target% (попыток: $attempt)")
+                } else {
+                    Log.e("FTMS", "✗ incline $target% не удалось после $maxAttempts попыток")
                 }
                 delay(commandGapMs)
             }
         }
+    }
+
+    /** Ждём, пока дорожка не подтвердит скорость ±0.15 км/ч. */
+    private suspend fun waitForSpeed(target: Double, timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (abs(_data.value.speedKmh - target) < 0.15) return true
+            delay(100)
+        }
+        return false
+    }
+
+    /** Ждём, пока дорожка не подтвердит наклон ±0.6%. */
+    private suspend fun waitForIncline(target: Double, timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (abs(_data.value.inclinePercent - target) < 0.6) return true
+            delay(100)
+        }
+        return false
     }
 
     private suspend fun sendSpeedNow(speedKmh: Double) {
@@ -119,7 +176,7 @@ class FTMSProtocol : ITreadmillProtocol {
         delay(80)
         val cmd = byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
         c.write(uuid, cmd, true)
-        Log.d("FTMS", "→ speed $speedKmh км/ч")
+        Log.d("FTMS", "→ speed $speedKmh км/ч  ($cmd)")
     }
 
     private suspend fun sendInclineNow(percent: Double) {
@@ -130,7 +187,7 @@ class FTMSProtocol : ITreadmillProtocol {
         delay(80)
         val cmd = byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
         c.write(uuid, cmd, true)
-        Log.d("FTMS", "→ incline $percent%")
+        Log.d("FTMS", "→ incline $percent%  ($cmd)")
     }
 
     override suspend fun requestControl(): Boolean {
@@ -140,14 +197,42 @@ class FTMSProtocol : ITreadmillProtocol {
 
     override suspend fun start(): Boolean {
         val uuid = controlPointUuid ?: return false
-        conn?.write(uuid, byteArrayOf(0x00), true); delay(80)
-        return conn?.write(uuid, byteArrayOf(0x07), true) ?: false
+        sendMutex.withLock {
+            conn?.write(uuid, byteArrayOf(0x00), true); delay(80)
+            conn?.write(uuid, byteArrayOf(0x07), true)
+        }
+        Log.d("FTMS", "→ start")
+        return true
     }
 
+    /**
+     * Стоп. Ключевая команда — установить скорость 0 (0x02 0x00 0x00).
+     * 0x08 0x01 (Stop/Pause) на этой дорожке игнорируется, но отправляем
+     * её второй — на всякий случай.
+     */
     override suspend fun stop(): Boolean {
         val uuid = controlPointUuid ?: return false
-        conn?.write(uuid, byteArrayOf(0x00), true); delay(80)
-        return conn?.write(uuid, byteArrayOf(0x08, 0x01), true) ?: false
+        val c = conn ?: return false
+
+        sendMutex.withLock {
+            c.write(uuid, byteArrayOf(0x00), true); delay(80)
+            c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true); delay(80)
+            c.write(uuid, byteArrayOf(0x08, 0x01), true)
+        }
+        lastSentSpeed = 0.0
+        desiredSpeed.value = null   // сброс очереди
+
+        // Убедимся, что скорость реально падает
+        var confirmed = waitForSpeed(0.0, confirmTimeoutMs)
+        if (!confirmed) {
+            sendMutex.withLock {
+                c.write(uuid, byteArrayOf(0x00), true); delay(80)
+                c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
+            }
+            confirmed = waitForSpeed(0.0, confirmTimeoutMs)
+        }
+        Log.d("FTMS", if (confirmed) "✓ stop" else "✗ stop не подтверждён")
+        return confirmed
     }
 
     override suspend fun setSpeed(speedKmh: Double): Boolean {
@@ -173,7 +258,8 @@ class FTMSProtocol : ITreadmillProtocol {
 
     private fun parseControlPointResponse(b: ByteArray) {
         if (b.size >= 3 && (b[0].toInt() and 0xFF) == 0x80) {
-            Log.d("FTMS", "CP resp op=0x%02X res=%d".format(b[1].toInt() and 0xFF, b[2].toInt() and 0xFF))
+            Log.d("FTMS", "CP resp op=0x%02X res=%d"
+                .format(b[1].toInt() and 0xFF, b[2].toInt() and 0xFF))
         }
     }
 
@@ -234,5 +320,6 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     private fun u24(b: ByteArray, o: Int): Int =
-        (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8) or ((b[o + 2].toInt() and 0xFF) shl 16)
+        (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
+            or ((b[o + 2].toInt() and 0xFF) shl 16)
 }
