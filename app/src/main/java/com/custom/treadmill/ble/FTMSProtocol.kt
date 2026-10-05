@@ -15,9 +15,15 @@ class FTMSProtocol : ITreadmillProtocol {
     override val data: StateFlow<TreadmillData> = _data.asStateFlow()
 
     private var conn: BleConnection? = null
-
     private var controlPointUuid: UUID? = null
     override val writeCharacteristicUuid: UUID? get() = controlPointUuid
+
+    /** Bit 3 = Target Inclination Supported (0=нет, 1=да). Если null — не читали. */
+    var inclineSupported: Boolean? = null
+        private set
+    /** Полный битмап фич из 0x2ACC (для Debug-экрана). */
+    var featureBitmap: UInt? = null
+        private set
 
     override suspend fun initialize(conn: BleConnection): Boolean {
         this.conn = conn
@@ -31,8 +37,27 @@ class FTMSProtocol : ITreadmillProtocol {
                 break
             }
         }
-        if (!controlFound) Log.w("FTMS", "Fitness Machine Control Point не найден")
+        if (!controlFound) Log.w("FTMS", "Control Point не найден")
 
+        // Читаем Feature Bitmap, если есть
+        val featureChar = conn.findCharacteristic(Uuids.FTMS_FEATURE)
+        if (featureChar != null) {
+            val bytes = conn.read(featureChar.uuid)
+            if (bytes != null && bytes.size >= 4) {
+                val bm = (bytes[0].toUInt() and 0xFFu) or
+                        ((bytes[1].toUInt() and 0xFFu) shl 8) or
+                        ((bytes[2].toUInt() and 0xFFu) shl 16) or
+                        ((bytes[3].toUInt() and 0xFFu) shl 24)
+                featureBitmap = bm
+                inclineSupported = (bm and (1u shl 3)) != 0u
+                Log.d("FTMS", "Feature bitmap: ${bm.toString(2).padStart(32, '0')} " +
+                        "inclineSupported=$inclineSupported")
+            } else {
+                Log.w("FTMS", "Не удалось прочитать Feature Bitmap")
+            }
+        }
+
+        // Подписки
         if (conn.findCharacteristic(Uuids.FTMS_TREADMILL_DATA) != null) {
             conn.setNotify(Uuids.FTMS_TREADMILL_DATA, true, indicate = false)
         }
@@ -74,15 +99,19 @@ class FTMSProtocol : ITreadmillProtocol {
         )
         requestControl()
         delay(80)
+        Log.d("FTMS", "setSpeed $speedKmh → ${cmd.toHex()}")
         return conn?.write(uuid, cmd, true) ?: false
     }
 
-    /**
-     * Set Target Inclination (op code 0x03).
-     * Параметр: sint16, единица 0.1 %. Диапазон обычно −10%..+15%.
-     */
     override suspend fun setIncline(percent: Double): Boolean {
-        val uuid = controlPointUuid ?: return false
+        val uuid = controlPointUuid ?: run {
+            Log.w("FTMS", "setIncline: Control Point отсутствует")
+            return false
+        }
+        if (inclineSupported == false) {
+            Log.w("FTMS", "setIncline: дорожка не поддерживает Inclination (bit 3 = 0)")
+            // Всё равно попробуем — некоторые дорожки игнорируют feature bitmap
+        }
         val raw = (percent * 10.0).toInt().coerceIn(-32768, 32767)
         val cmd = byteArrayOf(
             0x03,
@@ -91,6 +120,7 @@ class FTMSProtocol : ITreadmillProtocol {
         )
         requestControl()
         delay(80)
+        Log.d("FTMS", "setIncline $percent% → ${cmd.toHex()}")
         return conn?.write(uuid, cmd, true) ?: false
     }
 
@@ -108,7 +138,17 @@ class FTMSProtocol : ITreadmillProtocol {
         if ((b[0].toInt() and 0xFF) == 0x80) {
             val reqOp = b[1].toInt() and 0xFF
             val result = b[2].toInt() and 0xFF
-            Log.d("FTMS", "ControlPoint Response: op=$reqOp result=$result")
+            val resultText = when (result) {
+                0x01 -> "SUCCESS"
+                0x02 -> "OP CODE NOT SUPPORTED"
+                0x03 -> "INVALID PARAMETER"
+                0x04 -> "OPERATION FAILED"
+                0x05 -> "CONTROL NOT PERMITTED"
+                else -> "unknown ($result)"
+            }
+            Log.d("FTMS", "← ControlPoint response: op=0x%02X result=%s".format(reqOp, resultText))
+        } else {
+            Log.d("FTMS", "← ControlPoint raw: ${b.toHex()}")
         }
     }
 
@@ -125,41 +165,30 @@ class FTMSProtocol : ITreadmillProtocol {
             var elapsed = _data.value.elapsedSec
             var hr = _data.value.heartRate
 
-            // Instantaneous Speed (всегда)
             if (o + 2 <= b.size) { speed = u16(b, o) / 100.0; o += 2 }
-            // Average Speed
             if (flags and (1 shl 1) != 0) o += 2
-            // Total Distance
             if (flags and (1 shl 2) != 0) {
                 if (o + 3 <= b.size) distance = u24(b, o) / 1000.0
                 o += 3
             }
-            // Inclination (sint16, 0.1%) + Ramp Angle (sint16, 0.1°)
             if (flags and (1 shl 3) != 0) {
                 if (o + 4 <= b.size) {
                     incline = s16(b, o) / 10.0
                 }
                 o += 4
             }
-            // Elevation Gain (2x uint16)
             if (flags and (1 shl 4) != 0) o += 4
-            // Instantaneous Pace
             if (flags and (1 shl 5) != 0) o += 1
-            // Average Pace
             if (flags and (1 shl 6) != 0) o += 1
-            // Expended Energy (5 байт)
             if (flags and (1 shl 7) != 0) {
                 if (o + 2 <= b.size) calories = u16(b, o)
                 o += 5
             }
-            // Heart Rate
             if (flags and (1 shl 8) != 0) {
                 if (o + 1 <= b.size) hr = b[o].toInt() and 0xFF
                 o += 1
             }
-            // MET
             if (flags and (1 shl 9) != 0) o += 1
-            // Elapsed Time
             if (flags and (1 shl 10) != 0) {
                 if (o + 2 <= b.size) elapsed = u16(b, o)
                 o += 2
@@ -175,7 +204,7 @@ class FTMSProtocol : ITreadmillProtocol {
                 isRunning = speed > 0.05
             )
         } catch (e: Exception) {
-            Log.w("FTMS", "Ошибка разбора Treadmill Data: ${e.message}")
+            Log.w("FTMS", "Ошибка разбора: ${e.message}")
         }
     }
 
