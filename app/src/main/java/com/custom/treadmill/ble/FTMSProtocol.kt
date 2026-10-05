@@ -46,7 +46,7 @@ class FTMSProtocol : ITreadmillProtocol {
     /** Сколько ждать подтверждения от дорожки (мс). */
     var confirmTimeoutMs: Long = 2500L
 
-    /** Максимум попыток отправки (1 + 2 повтора). */
+    /** Максимум попыток отправки. */
     var maxAttempts: Int = 3
 
     /** Округлять наклон до целых %. */
@@ -110,9 +110,9 @@ class FTMSProtocol : ITreadmillProtocol {
                     }
                 }
                 if (confirmed) {
-                    Log.d("FTMS", "✓ speed $target км/ч (попыток: $attempt)")
+                    Log.d("FTMS", "OK speed $target км/ч (попыток: $attempt)")
                 } else {
-                    Log.e("FTMS", "✗ speed $target не удалось после $maxAttempts попыток")
+                    Log.e("FTMS", "FAIL speed $target после $maxAttempts попыток")
                 }
                 delay(commandGapMs)
             }
@@ -139,16 +139,15 @@ class FTMSProtocol : ITreadmillProtocol {
                     }
                 }
                 if (confirmed) {
-                    Log.d("FTMS", "✓ incline $target% (попыток: $attempt)")
+                    Log.d("FTMS", "OK incline $target% (попыток: $attempt)")
                 } else {
-                    Log.e("FTMS", "✗ incline $target% не удалось после $maxAttempts попыток")
+                    Log.e("FTMS", "FAIL incline $target% после $maxAttempts попыток")
                 }
                 delay(commandGapMs)
             }
         }
     }
 
-    /** Ждём, пока дорожка не подтвердит скорость ±0.15 км/ч. */
     private suspend fun waitForSpeed(target: Double, timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
@@ -158,7 +157,6 @@ class FTMSProtocol : ITreadmillProtocol {
         return false
     }
 
-    /** Ждём, пока дорожка не подтвердит наклон ±0.6%. */
     private suspend fun waitForIncline(target: Double, timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
@@ -176,7 +174,7 @@ class FTMSProtocol : ITreadmillProtocol {
         delay(80)
         val cmd = byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
         c.write(uuid, cmd, true)
-        Log.d("FTMS", "→ speed $speedKmh км/ч  ($cmd)")
+        Log.d("FTMS", "-> speed $speedKmh ($cmd)")
     }
 
     private suspend fun sendInclineNow(percent: Double) {
@@ -187,7 +185,7 @@ class FTMSProtocol : ITreadmillProtocol {
         delay(80)
         val cmd = byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
         c.write(uuid, cmd, true)
-        Log.d("FTMS", "→ incline $percent%  ($cmd)")
+        Log.d("FTMS", "-> incline $percent% ($cmd)")
     }
 
     override suspend fun requestControl(): Boolean {
@@ -198,10 +196,11 @@ class FTMSProtocol : ITreadmillProtocol {
     override suspend fun start(): Boolean {
         val uuid = controlPointUuid ?: return false
         sendMutex.withLock {
-            conn?.write(uuid, byteArrayOf(0x00), true); delay(80)
+            conn?.write(uuid, byteArrayOf(0x00), true)
+            delay(80)
             conn?.write(uuid, byteArrayOf(0x07), true)
         }
-        Log.d("FTMS", "→ start")
+        Log.d("FTMS", "-> start")
         return true
     }
 
@@ -215,23 +214,25 @@ class FTMSProtocol : ITreadmillProtocol {
         val c = conn ?: return false
 
         sendMutex.withLock {
-            c.write(uuid, byteArrayOf(0x00), true); delay(80)
-            c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true); delay(80)
+            c.write(uuid, byteArrayOf(0x00), true)
+            delay(80)
+            c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
+            delay(80)
             c.write(uuid, byteArrayOf(0x08, 0x01), true)
         }
         lastSentSpeed = 0.0
-        desiredSpeed.value = null   // сброс очереди
+        desiredSpeed.value = null
 
-        // Убедимся, что скорость реально падает
         var confirmed = waitForSpeed(0.0, confirmTimeoutMs)
         if (!confirmed) {
             sendMutex.withLock {
-                c.write(uuid, byteArrayOf(0x00), true); delay(80)
+                c.write(uuid, byteArrayOf(0x00), true)
+                delay(80)
                 c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
             }
             confirmed = waitForSpeed(0.0, confirmTimeoutMs)
         }
-        Log.d("FTMS", if (confirmed) "✓ stop" else "✗ stop не подтверждён")
+        Log.d("FTMS", if (confirmed) "OK stop" else "FAIL stop не подтверждён")
         return confirmed
     }
 
@@ -258,16 +259,17 @@ class FTMSProtocol : ITreadmillProtocol {
 
     private fun parseControlPointResponse(b: ByteArray) {
         if (b.size >= 3 && (b[0].toInt() and 0xFF) == 0x80) {
-            Log.d("FTMS", "CP resp op=0x%02X res=%d"
-                .format(b[1].toInt() and 0xFF, b[2].toInt() and 0xFF))
+            val op = b[1].toInt() and 0xFF
+            val res = b[2].toInt() and 0xFF
+            Log.d("FTMS", "CP resp op=0x%02X res=%d".format(op, res))
         }
     }
 
     private fun parseTreadmillData(b: ByteArray) {
         if (b.size < 4) return
         try {
-            var o = 0
-            val flags = u16(b, 0); o = 2
+            var o = 2
+            val flags = u16(b, 0)
             var speed = _data.value.speedKmh
             var incline = 0.0
             var distance = _data.value.distanceKm
@@ -275,7 +277,10 @@ class FTMSProtocol : ITreadmillProtocol {
             var elapsed = _data.value.elapsedSec
             var hr = _data.value.heartRate
 
-            if (o + 2 <= b.size) { speed = u16(b, o) / 100.0; o += 2 }
+            if (o + 2 <= b.size) {
+                speed = u16(b, o) / 100.0
+                o += 2
+            }
             if (flags and (1 shl 1) != 0) o += 2
             if (flags and (1 shl 2) != 0) {
                 if (o + 3 <= b.size) distance = u24(b, o) / 1000.0
@@ -303,8 +308,12 @@ class FTMSProtocol : ITreadmillProtocol {
             }
 
             _data.value = TreadmillData(
-                speedKmh = speed, inclinePercent = incline, distanceKm = distance,
-                calories = calories, elapsedSec = elapsed, heartRate = hr,
+                speedKmh = speed,
+                inclinePercent = incline,
+                distanceKm = distance,
+                calories = calories,
+                elapsedSec = elapsed,
+                heartRate = hr,
                 isRunning = speed > 0.05
             )
         } catch (e: Exception) {
@@ -312,14 +321,18 @@ class FTMSProtocol : ITreadmillProtocol {
         }
     }
 
-    private fun u16(b: ByteArray, o: Int): Int =
-        (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
-
-    private fun s16(b: ByteArray, o: Int): Int {
-        val raw = u16(b, o); return if (raw >= 0x8000) raw - 0x10000 else raw
+    private fun u16(b: ByteArray, o: Int): Int {
+        return (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
     }
 
-    private fun u24(b: ByteArray, o: Int): Int =
-        (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
-            or ((b[o + 2].toInt() and 0xFF) shl 16)
+    private fun s16(b: ByteArray, o: Int): Int {
+        val raw = u16(b, o)
+        return if (raw >= 0x8000) raw - 0x10000 else raw
+    }
+
+    private fun u24(b: ByteArray, o: Int): Int {
+        return (b[o].toInt() and 0xFF) or
+                ((b[o + 1].toInt() and 0xFF) shl 8) or
+                ((b[o + 2].toInt() and 0xFF) shl 16)
+    }
 }
