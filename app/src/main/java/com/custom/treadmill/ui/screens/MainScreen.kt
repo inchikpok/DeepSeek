@@ -50,6 +50,9 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val statusMessage by vm.statusMessage.collectAsState()
     val settings by vm.settings.collectAsState()
 
+    // Готовность дорожки
+    val treadmillReady = treadmillState == BleConnectionState.READY
+
     var permsGranted by remember { mutableStateOf(hasBlePermissions(ctx)) }
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -137,7 +140,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
 
                 Spacer(Modifier.height(6.dp))
 
-                // ---------- Метрики (по центру) ----------
+                // ---------- Метрики ----------
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(vertical = 8.dp, horizontal = 10.dp)) {
                         Row(Modifier.fillMaxWidth()) {
@@ -205,11 +208,13 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(
                         onClick = { vm.startTreadmill() },
+                        enabled = treadmillReady,
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(vertical = 10.dp)
                     ) { Text("Старт", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
                     Button(
                         onClick = { vm.stopTreadmill() },
+                        enabled = treadmillReady,
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(vertical = 10.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -224,6 +229,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                 // ---------- Экстренный стоп ----------
                 Button(
                     onClick = { vm.emergencyStop() },
+                    enabled = treadmillReady,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
                     contentPadding = PaddingValues(vertical = 9.dp)
