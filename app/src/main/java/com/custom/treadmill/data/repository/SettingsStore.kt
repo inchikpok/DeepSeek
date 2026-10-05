@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 
 enum class ProtocolType { FTMS, FITSHOW }
 enum class HrMode { TARGET, ZONE }
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 @Serializable
 data class AppSettings(
@@ -17,15 +18,13 @@ data class AppSettings(
     val manualWriteUuid: String = "",
     val manualNotifyUuid: String = "",
 
-    // Скорость
+    // НОВОЕ: тема приложения
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+
     val minSpeedKmh: Double = 1.0,
     val maxSpeedKmh: Double = 12.0,
-
-    // Наклон
     val maxInclinePercent: Double = 15.0,
     val inclineStep: Double = 0.5,
-
-    // Авторегулировка по пульсу
     val hrEnabled: Boolean = false,
     val hrMode: HrMode = HrMode.TARGET,
     val targetHr: Int = 130,
@@ -38,7 +37,6 @@ data class AppSettings(
 )
 
 class SettingsStore(context: Context) {
-
     private val prefs = context.getSharedPreferences("treadmill_settings", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
