@@ -70,7 +70,7 @@ fun AppNavHost() {
 
 private data class Tab(val title: String, val icon: ImageVector)
 
-@OptIn(ExperimentalFoundationApi::class)   // ← ВОТ ЭТА СТРОКА ЛЕЧИТ ОШИБКИ
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MainTabs(
     mainVm: MainViewModel,
@@ -126,7 +126,12 @@ private fun MainTabs(
                     onStartWorkout = { mainVm.startWorkout(it); onOpenWorkout() }
                 )
                 2 -> HistoryScreen(programVm = programVm, onBack = null)
-                3 -> SettingsScreen(vm = mainVm, onBack = null)
+                3 -> SettingsScreen(
+                    vm = mainVm,
+                    onBack = null,
+                    onOpenDebug = onOpenDebug,
+                    onOpenAbout = onOpenAbout
+                )
             }
         }
     }
