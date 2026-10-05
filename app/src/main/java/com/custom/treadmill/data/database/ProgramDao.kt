@@ -32,4 +32,10 @@ interface WorkoutLogDao {
 
     @Insert
     suspend fun insert(l: WorkoutLogEntity)
+
+    @Insert
+    suspend fun insertAll(logs: List<WorkoutLogEntity>)
+
+    @Query("DELETE FROM workout_logs")
+    suspend fun deleteAll()
 }
