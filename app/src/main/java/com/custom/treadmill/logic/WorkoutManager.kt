@@ -40,7 +40,7 @@ class WorkoutManager {
         scope: CoroutineScope,
         program: ProgramData,
         onSetSpeed: suspend (Double) -> Unit,
-        onSetIncline: suspend (Double) -> Unit = {}
+        onSetIncline: suspend (Double) -> Unit = ::noopDouble
     ) {
         stop()
         currentProgram = program
@@ -106,9 +106,8 @@ class WorkoutManager {
     private fun launchLoop() {
         val scope = scopeRef ?: return
         val program = currentProgram ?: return
-        // Явные типы suspend-функций — иначе компилятор не выводит
         val onSetSpeed: suspend (Double) -> Unit = onSetSpeedRef ?: return
-        val onSetIncline: suspend (Double) -> Unit = onSetInclineRef ?: { _: Double -> }
+        val onSetIncline: suspend (Double) -> Unit = onSetInclineRef ?: ::noopDouble
 
         job = scope.launch {
             val segments = program.segments
@@ -170,5 +169,10 @@ class WorkoutManager {
                 )
             }
         }
+    }
+
+    /** Заглушка для наклона: ничего не делает. */
+    private suspend fun noopDouble(@Suppress("UNUSED_PARAMETER") value: Double) {
+        // no-op
     }
 }
