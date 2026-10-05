@@ -1,5 +1,6 @@
 package com.custom.treadmill.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -23,7 +24,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.custom.treadmill.ui.screens.*
+import com.custom.treadmill.ui.screens.AboutScreen
+import com.custom.treadmill.ui.screens.DebugScreen
+import com.custom.treadmill.ui.screens.HistoryScreen
+import com.custom.treadmill.ui.screens.MainScreen
+import com.custom.treadmill.ui.screens.ProgramsScreen
+import com.custom.treadmill.ui.screens.SettingsScreen
+import com.custom.treadmill.ui.screens.WorkoutScreen
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import com.custom.treadmill.ui.viewmodels.ProgramViewModel
 import kotlinx.coroutines.launch
@@ -63,6 +70,7 @@ fun AppNavHost() {
 
 private data class Tab(val title: String, val icon: ImageVector)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MainTabs(
     mainVm: MainViewModel,
