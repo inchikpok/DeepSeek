@@ -1,5 +1,6 @@
 package com.custom.treadmill.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,9 +10,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
@@ -24,23 +29,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp                                  // ← ДОБАВЛЕНО
+import androidx.compose.ui.unit.sp
 import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.data.repository.ProtocolType
 import com.custom.treadmill.data.repository.ThemeMode
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: (() -> Unit)? = null) {
+fun SettingsScreen(
+    vm: MainViewModel,
+    onBack: (() -> Unit)? = null,
+    onOpenDebug: (() -> Unit)? = null,
+    onOpenAbout: (() -> Unit)? = null
+) {
     val settings by vm.settings.collectAsState()
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
     ) {
         if (onBack != null) {
             TextButton(onClick = onBack) { Text("← Назад") }
         }
-        Text("Настройки", fontWeight = FontWeight.Bold, fontSize = 20.sp)   // ← 20.sp (не dp.value.sp())
+        Text("Настройки", fontWeight = FontWeight.Bold, fontSize = 20.sp)
 
         Spacer(Modifier.height(12.dp))
 
@@ -49,26 +62,14 @@ fun SettingsScreen(vm: MainViewModel, onBack: (() -> Unit)? = null) {
             Column(Modifier.padding(16.dp)) {
                 Text("Внешний вид", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = settings.themeMode == ThemeMode.SYSTEM,
-                        onClick = { vm.updateSettings { it.copy(themeMode = ThemeMode.SYSTEM) } }
-                    )
-                    Text("Как в системе")
+                ThemeRow("Как в системе", settings.themeMode == ThemeMode.SYSTEM) {
+                    vm.updateSettings { it.copy(themeMode = ThemeMode.SYSTEM) }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = settings.themeMode == ThemeMode.LIGHT,
-                        onClick = { vm.updateSettings { it.copy(themeMode = ThemeMode.LIGHT) } }
-                    )
-                    Text("Светлая")
+                ThemeRow("Светлая", settings.themeMode == ThemeMode.LIGHT) {
+                    vm.updateSettings { it.copy(themeMode = ThemeMode.LIGHT) }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = settings.themeMode == ThemeMode.DARK,
-                        onClick = { vm.updateSettings { it.copy(themeMode = ThemeMode.DARK) } }
-                    )
-                    Text("Тёмная")
+                ThemeRow("Тёмная", settings.themeMode == ThemeMode.DARK) {
+                    vm.updateSettings { it.copy(themeMode = ThemeMode.DARK) }
                 }
             }
         }
@@ -286,6 +287,51 @@ fun SettingsScreen(vm: MainViewModel, onBack: (() -> Unit)? = null) {
             }
         }
 
+        // ---------- Ещё ----------
+        if (onOpenDebug != null || onOpenAbout != null) {
+            Spacer(Modifier.height(12.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    if (onOpenDebug != null) {
+                        LinkRow("Отладка (Debug)", onOpenDebug)
+                    }
+                    if (onOpenAbout != null) {
+                        LinkRow("О программе", onOpenAbout)
+                    }
+                }
+            }
+        }
+
         Spacer(Modifier.height(20.dp))
+    }
+}
+
+@Composable
+private fun ThemeRow(text: String, selected: Boolean, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(text)
+    }
+}
+
+@Composable
+private fun LinkRow(text: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text,
+            modifier = Modifier.weight(1f),
+            fontSize = 15.sp
+        )
+        Icon(
+            Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
