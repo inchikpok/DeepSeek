@@ -6,14 +6,7 @@ import android.bluetooth.le.ScanResult
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.custom.treadmill.TreadmillApp
-import com.custom.treadmill.ble.BleConnection
-import com.custom.treadmill.ble.BleConnectionState
-import com.custom.treadmill.ble.FTMSProtocol
-import com.custom.treadmill.ble.FitShowProprietaryProtocol
-import com.custom.treadmill.ble.HeartRateService
-import com.custom.treadmill.ble.ITreadmillProtocol
-import com.custom.treadmill.ble.TreadmillData
-import com.custom.treadmill.ble.hexToBytes
+import com.custom.treadmill.ble.*
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.database.WorkoutLogEntity
 import com.custom.treadmill.data.repository.AppSettings
@@ -30,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
+import kotlin.math.abs
 
 enum class ScanMode { NONE, TREADMILL, HEART_RATE }
 
@@ -55,10 +49,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _treadmillData = MutableStateFlow(TreadmillData())
     val treadmillData: StateFlow<TreadmillData> = _treadmillData.asStateFlow()
 
+    // Целевые значения — то, что показываем на плитках (мгновенно)
+    private val _targetSpeed = MutableStateFlow(0.0)
+    val targetSpeed: StateFlow<Double> = _targetSpeed.asStateFlow()
+
+    private val _targetIncline = MutableStateFlow(0.0)
+    val targetIncline: StateFlow<Double> = _targetIncline.asStateFlow()
+
+    private var lastSpeedCmdTime = 0L
+    private var lastInclineCmdTime = 0L
+
     private val _heartRate = MutableStateFlow(0)
     val heartRate: StateFlow<Int> = _heartRate.asStateFlow()
 
-    // История пульса для графика — храним последние 30 минут
     private val _hrHistory = MutableStateFlow<List<HrPoint>>(emptyList())
     val hrHistory: StateFlow<List<HrPoint>> = _hrHistory.asStateFlow()
 
@@ -79,35 +82,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var hrAutoJob: Job? = null
 
-    private var hrSum = 0L
-    private var hrCount = 0L
-    private var hrMax = 0
-    private var speedSum = 0.0
-    private var speedCount = 0L
+    private var hrSum = 0L; private var hrCount = 0L; private var hrMax = 0
+    private var speedSum = 0.0; private var speedCount = 0L
 
     init {
         viewModelScope.launch { ble.scanLog.collect { addLog(it) } }
         viewModelScope.launch { ble.scanResults.collect { _scanResults.value = it } }
+
         viewModelScope.launch {
             _heartRate.collect { hr ->
                 if (hr > 0) {
                     hrSum += hr; hrCount++
                     if (hr > hrMax) hrMax = hr
-                    // Добавляем точку на график (не чаще, чем раз в 1 с)
                     val now = System.currentTimeMillis()
                     val list = _hrHistory.value
                     val last = list.lastOrNull()
                     if (last == null || now - last.timestamp >= 900L) {
                         val cutoff = now - 30 * 60 * 1000L
-                        _hrHistory.value = (list + HrPoint(now, hr))
-                            .filter { it.timestamp >= cutoff }
+                        _hrHistory.value = (list + HrPoint(now, hr)).filter { it.timestamp >= cutoff }
                     }
                 }
             }
         }
+
         viewModelScope.launch {
             _treadmillData.collect { d ->
                 if (d.speedKmh > 0.05) { speedSum += d.speedKmh; speedCount++ }
+
+                // Синхронизация target с реальными данными, если давно не командовали
+                val now = System.currentTimeMillis()
+                if (now - lastSpeedCmdTime > 3500 && abs(_targetSpeed.value - d.speedKmh) > 0.1) {
+                    _targetSpeed.value = d.speedKmh
+                }
+                if (now - lastInclineCmdTime > 3500 && abs(_targetIncline.value - d.inclinePercent) > 0.4) {
+                    _targetIncline.value = d.inclinePercent
+                }
             }
         }
     }
@@ -155,8 +164,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch { p.data.collect { _treadmillData.value = it } }
             val ok = p.initialize(conn)
             addLog(if (ok) "Протокол инициализирован" else "Протокол инициализирован с ошибками")
-            _statusMessage.value =
-                if (ok) "Дорожка готова" else "Не найдены нужные характеристики"
+            _statusMessage.value = if (ok) "Дорожка готова" else "Не найдены нужные характеристики"
+            // Стартовая синхронизация
+            _targetSpeed.value = _treadmillData.value.speedKmh
+            _targetIncline.value = _treadmillData.value.inclinePercent
         }
     }
 
@@ -166,6 +177,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         treadmillConn = null
         _treadmillState.value = BleConnectionState.DISCONNECTED
         _treadmillData.value = TreadmillData()
+        _targetSpeed.value = 0.0
+        _targetIncline.value = 0.0
     }
 
     fun connectHeartRate(device: BluetoothDevice) {
@@ -183,7 +196,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (state == BleConnectionState.DISCONNECTED) {
                     _heartRate.value = 0
-                    _statusMessage.value = "Пульсометр отключён — автокоррекция приостановлена"
+                    _statusMessage.value = "Пульсометр отключён"
                 }
             }
         }
@@ -205,21 +218,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setSpeed(kmh: Double) {
-        viewModelScope.launch {
-            val s = settingsStore.settings.value
-            val safe = kmh.coerceIn(s.minSpeedKmh, s.maxSpeedKmh)
-            protocol?.setSpeed(safe)
-        }
+        val s = settingsStore.settings.value
+        val safe = kmh.coerceIn(s.minSpeedKmh, s.maxSpeedKmh)
+        _targetSpeed.value = safe
+        lastSpeedCmdTime = System.currentTimeMillis()
+        viewModelScope.launch { protocol?.setSpeed(safe) }
     }
 
     fun setSpeedManual(kmh: Double) = setSpeed(kmh)
 
     fun setIncline(percent: Double) {
-        viewModelScope.launch {
-            val s = settingsStore.settings.value
-            val safe = percent.coerceIn(0.0, s.maxInclinePercent)
-            protocol?.setIncline(safe)
-        }
+        val s = settingsStore.settings.value
+        val safe = percent.coerceIn(0.0, s.maxInclinePercent)
+        _targetIncline.value = safe
+        lastInclineCmdTime = System.currentTimeMillis()
+        viewModelScope.launch { protocol?.setIncline(safe) }
     }
 
     fun startTreadmill() { viewModelScope.launch { protocol?.start() } }
@@ -235,24 +248,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             workoutManager.stop()
             setAutoHrEnabled(false)
             _statusMessage.value = "ЭКСТРЕННАЯ ОСТАНОВКА"
+            _targetSpeed.value = 0.0
+            _targetIncline.value = 0.0
         }
     }
 
     fun sendRawHex(hex: String): Boolean {
         val conn = treadmillConn ?: return false
         val uuid = protocol?.writeCharacteristicUuid ?: return false
-        return try {
-            conn.write(uuid, hex.hexToBytes(), true)
-        } catch (e: Exception) {
-            addLog("Ошибка отправки hex: ${e.message}")
-            false
+        return try { conn.write(uuid, hex.hexToBytes(), true) } catch (e: Exception) {
+            addLog("Ошибка отправки hex: ${e.message}"); false
         }
     }
 
     fun setAutoHrEnabled(enabled: Boolean) {
         settingsStore.update { it.copy(hrEnabled = enabled) }
         if (enabled) startHrAutoLoop() else stopHrAutoLoop()
-        addLog(if (enabled) "Авторегулировка по пульсу ВКЛ" else "Авторегулировка ВЫКЛ")
+        addLog(if (enabled) "Авторегулировка ВКЛ" else "Авторегулировка ВЫКЛ")
     }
 
     private fun startHrAutoLoop() {
@@ -264,10 +276,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (!cfg.hrEnabled) continue
                 val hr = _heartRate.value
                 if (hr <= 0) continue
-                val cur = _treadmillData.value.speedKmh
+                val cur = _targetSpeed.value
                 val newSpeed = HeartRateController.evaluate(cfg, hr, cur) ?: continue
                 setSpeed(newSpeed)
-                addLog("HR-автокоррекция: пульс=$hr, скорость %.1f -> %.1f".format(cur, newSpeed))
+                addLog("HR-авто: пульс=$hr, скорость %.1f → %.1f".format(cur, newSpeed))
             }
         }
     }
@@ -275,22 +287,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun stopHrAutoLoop() { hrAutoJob?.cancel(); hrAutoJob = null }
 
     fun startWorkout(program: ProgramData) {
-        resetStats()
-        resetHrHistory()
+        resetStats(); resetHrHistory()
         workoutManager.start(
-            scope = viewModelScope,
-            program = program,
-            onSetSpeed = { speed -> setSpeed(speed) },
-            onSetIncline = { inc -> setIncline(inc) }
+            scope = viewModelScope, program = program,
+            onSetSpeed = { setSpeed(it) },
+            onSetIncline = { setIncline(it) }
         )
     }
 
-    fun stopWorkout() { workoutManager.stop() }
-    fun resetWorkout() { workoutManager.reset() }
+    fun stopWorkout() = workoutManager.stop()
+    fun resetWorkout() = workoutManager.reset()
 
     private fun resetStats() {
-        hrSum = 0L; hrCount = 0L; hrMax = 0
-        speedSum = 0.0; speedCount = 0L
+        hrSum = 0L; hrCount = 0L; hrMax = 0; speedSum = 0.0; speedCount = 0L
     }
 
     fun saveWorkoutLog() {
@@ -309,7 +318,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     avgSpeedKmh = if (speedCount > 0) speedSum / speedCount else 0.0
                 )
             )
-            addLog("Тренировка сохранена в журнал")
+            addLog("Тренировка сохранена")
         }
     }
 
@@ -325,14 +334,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearLogs() { _logs.value = emptyList() }
 
-    private fun String.toUuidSafe(): UUID? = try {
-        UUID.fromString(this)
-    } catch (_: Exception) { null }
+    private fun String.toUuidSafe(): UUID? =
+        try { UUID.fromString(this) } catch (_: Exception) { null }
 
     override fun onCleared() {
         super.onCleared()
-        disconnectTreadmill()
-        disconnectHeartRate()
-        stopHrAutoLoop()
+        disconnectTreadmill(); disconnectHeartRate(); stopHrAutoLoop()
     }
 }
