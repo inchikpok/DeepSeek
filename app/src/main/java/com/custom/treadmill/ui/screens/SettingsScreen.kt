@@ -30,14 +30,16 @@ import com.custom.treadmill.data.repository.ThemeMode
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, onBack: (() -> Unit)? = null) {
     val settings by vm.settings.collectAsState()
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
     ) {
-        TextButton(onClick = onBack) { Text("← Назад") }
-        Text("Настройки", fontWeight = FontWeight.Bold)
+        if (onBack != null) {
+            TextButton(onClick = onBack) { Text("← Назад") }
+        }
+        Text("Настройки", fontWeight = FontWeight.Bold, fontSize = 20.dp.value.sp())
 
         Spacer(Modifier.height(12.dp))
 
@@ -157,7 +159,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                         val d = v.toDoubleOrNull() ?: return@OutlinedTextField
                         vm.updateSettings { it.copy(inclineStep = d) }
                     },
-                    label = { Text("Шаг кнопок, % (по умолчанию 0.5)") },
+                    label = { Text("Шаг кнопок, % (по умолчанию 1.0)") },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -282,5 +284,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
             }
         }
+
+        Spacer(Modifier.height(20.dp))
     }
 }
+
+private fun Int.sp() = this.toString()
