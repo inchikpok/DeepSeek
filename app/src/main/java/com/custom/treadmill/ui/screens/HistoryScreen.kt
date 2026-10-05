@@ -1,6 +1,5 @@
 package com.custom.treadmill.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,9 +16,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -36,7 +41,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.custom.treadmill.data.database.WorkoutLogEntity
@@ -47,13 +51,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// ================================================================
-//  Экран истории
-// ================================================================
 @Composable
 fun HistoryScreen(programVm: ProgramViewModel, onBack: () -> Unit) {
     val logs by programVm.logs.collectAsState()
-    var tab by rememberSaveable { mutableStateOf(0) }  // 0=Список, 1=Статистика
+    var tab by rememberSaveable { mutableStateOf(0) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         // ---------- Шапка ----------
@@ -66,7 +69,37 @@ fun HistoryScreen(programVm: ProgramViewModel, onBack: () -> Unit) {
                 Text("← Назад")
             }
             Spacer(Modifier.width(8.dp))
-            Text("Журнал тренировок", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Text(
+                "Журнал тренировок",
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                modifier = Modifier.weight(1f)
+            )
+            // Меню с тремя точками
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Меню")
+                }
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Загрузить демо-данные") },
+                        onClick = {
+                            menuOpen = false
+                            programVm.seedDemoLogs()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Очистить журнал", color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            menuOpen = false
+                            confirmClear = true
+                        }
+                    )
+                }
+            }
         }
 
         // ---------- Вкладки ----------
@@ -83,13 +116,41 @@ fun HistoryScreen(programVm: ProgramViewModel, onBack: () -> Unit) {
         // ---------- Контент ----------
         if (logs.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Нет тренировок", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Журнал пуст", fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Тренируйтесь с приложением или\n" +
+                                "загрузите демо-данные через меню ⋮ справа",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
             }
         } else if (tab == 0) {
             LogsList(logs)
         } else {
             StatsView(logs)
         }
+    }
+
+    // ---------- Подтверждение очистки ----------
+    if (confirmClear) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Очистить журнал?") },
+            text = { Text("Будут удалены все записи о тренировках. Действие необратимо.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClear = false
+                    programVm.clearLogs()
+                }) { Text("Очистить", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text("Отмена") }
+            }
+        )
     }
 }
 
@@ -150,7 +211,6 @@ private fun LogsList(logs: List<WorkoutLogEntity>) {
 // ================================================================
 @Composable
 private fun StatsView(logs: List<WorkoutLogEntity>) {
-    // Работаем только с тренировками, где был пульсометр
     val withHr = remember(logs) {
         logs.filter { it.avgHeartRate > 0 }.sortedBy { it.dateMillis }
     }
@@ -162,8 +222,6 @@ private fun StatsView(logs: List<WorkoutLogEntity>) {
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(4.dp))
-
-        // ---------- Общая сводка ----------
         SummaryCard(logs)
 
         if (withHr.isEmpty()) {
@@ -184,37 +242,23 @@ private fun StatsView(logs: List<WorkoutLogEntity>) {
         }
 
         Spacer(Modifier.height(12.dp))
-
-        // ---------- Пульсовая сводка ----------
         HeartSummaryCard(withHr)
-
         Spacer(Modifier.height(12.dp))
-
-        // ---------- График среднего пульса ----------
         ChartCard(
             title = "Средний пульс по тренировкам",
             subtitle = "${withHr.size} тренировок",
-            points = withHr.map { HrPoint(it.dateMillis, it.avgHeartRate) },
-            targetHr = 0
+            points = withHr.map { HrPoint(it.dateMillis, it.avgHeartRate) }
         )
-
         Spacer(Modifier.height(12.dp))
-
-        // ---------- График максимального пульса ----------
         ChartCard(
             title = "Максимальный пульс по тренировкам",
             subtitle = "Пик за тренировку",
-            points = withHr.map { HrPoint(it.dateMillis, it.maxHeartRate) },
-            targetHr = 0
+            points = withHr.map { HrPoint(it.dateMillis, it.maxHeartRate) }
         )
-
         Spacer(Modifier.height(20.dp))
     }
 }
 
-// ================================================================
-//  Общая сводка
-// ================================================================
 @Composable
 private fun SummaryCard(logs: List<WorkoutLogEntity>) {
     val totalSec = logs.sumOf { it.durationSec }
@@ -250,16 +294,12 @@ private fun StatBlock(label: String, value: String, modifier: Modifier = Modifie
     }
 }
 
-// ================================================================
-//  Пульсовая сводка + тренд
-// ================================================================
 @Composable
 private fun HeartSummaryCard(logs: List<WorkoutLogEntity>) {
     val avgAll = logs.map { it.avgHeartRate }.average().toInt()
     val maxAll = logs.maxOf { it.maxHeartRate }
     val minAll = logs.minOf { it.avgHeartRate }
 
-    // Прогресс: сравнение среднего пульса первой и второй половины тренировок
     val trend: Pair<Int, Boolean>? = if (logs.size >= 4) {
         val half = logs.size / 2
         val first = logs.take(half).map { it.avgHeartRate }.average()
@@ -300,12 +340,7 @@ private fun HeartSummaryCard(logs: List<WorkoutLogEntity>) {
                         Modifier.fillMaxWidth().padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            arrow,
-                            fontSize = 22.sp,
-                            color = color,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text(arrow, fontSize = 22.sp, color = color, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -329,15 +364,11 @@ private fun HeartSummaryCard(logs: List<WorkoutLogEntity>) {
     }
 }
 
-// ================================================================
-//  Карточка с графиком
-// ================================================================
 @Composable
 private fun ChartCard(
     title: String,
     subtitle: String,
-    points: List<HrPoint>,
-    targetHr: Int
+    points: List<HrPoint>
 ) {
     Card(
         Modifier.fillMaxWidth(),
@@ -355,12 +386,11 @@ private fun ChartCard(
             Spacer(Modifier.height(8.dp))
             HeartRateChart(
                 points = points,
-                targetHr = targetHr,
+                targetHr = 0,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp)
             )
-            // Подписи дат под графиком
             if (points.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth()) {
@@ -370,7 +400,7 @@ private fun ChartCard(
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.width(1.dp).weight(1f))
+                    Spacer(Modifier.weight(1f))
                     Text(
                         fmt.format(Date(points.last().timestamp)),
                         fontSize = 11.sp,
@@ -382,9 +412,6 @@ private fun ChartCard(
     }
 }
 
-// ================================================================
-//  Утилиты
-// ================================================================
 private fun formatDuration(totalSec: Int): String {
     val h = totalSec / 3600
     val m = (totalSec % 3600) / 60
