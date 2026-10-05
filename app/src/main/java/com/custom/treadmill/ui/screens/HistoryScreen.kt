@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.custom.treadmill.data.database.WorkoutLogEntity
@@ -52,9 +54,9 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun HistoryScreen(programVm: ProgramViewModel, onBack: () -> Unit) {
+fun HistoryScreen(programVm: ProgramViewModel, onBack: (() -> Unit)? = null) {
     val logs by programVm.logs.collectAsState()
-    var tab by rememberSaveable { mutableStateOf(0) }
+    var tab by rememberSaveable { mutableStateOf(0) }   // 0=Список, 1=Статистика
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
@@ -65,17 +67,18 @@ fun HistoryScreen(programVm: ProgramViewModel, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Spacer(Modifier.height(12.dp))
-            TextButton(onClick = onBack, contentPadding = PaddingValues(4.dp)) {
-                Text("← Назад")
+            if (onBack != null) {
+                TextButton(onClick = onBack, contentPadding = PaddingValues(4.dp)) {
+                    Text("← Назад")
+                }
+                Spacer(Modifier.width(8.dp))
             }
-            Spacer(Modifier.width(8.dp))
             Text(
                 "Журнал тренировок",
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp,
                 modifier = Modifier.weight(1f)
             )
-            // Меню с тремя точками
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Меню")
@@ -124,7 +127,7 @@ fun HistoryScreen(programVm: ProgramViewModel, onBack: () -> Unit) {
                                 "загрузите демо-данные через меню ⋮ справа",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -135,9 +138,8 @@ fun HistoryScreen(programVm: ProgramViewModel, onBack: () -> Unit) {
         }
     }
 
-    // ---------- Подтверждение очистки ----------
     if (confirmClear) {
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Очистить журнал?") },
             text = { Text("Будут удалены все записи о тренировках. Действие необратимо.") },
@@ -169,16 +171,11 @@ private fun TabChip(text: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-// ================================================================
-//  Вкладка «Список»
-// ================================================================
 @Composable
 private fun LogsList(logs: List<WorkoutLogEntity>) {
     val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
     LazyColumn(
-        Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(bottom = 20.dp)
     ) {
@@ -206,9 +203,6 @@ private fun LogsList(logs: List<WorkoutLogEntity>) {
     }
 }
 
-// ================================================================
-//  Вкладка «Статистика»
-// ================================================================
 @Composable
 private fun StatsView(logs: List<WorkoutLogEntity>) {
     val withHr = remember(logs) {
