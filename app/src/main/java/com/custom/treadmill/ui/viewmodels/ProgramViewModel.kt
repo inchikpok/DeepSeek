@@ -35,4 +35,14 @@ class ProgramViewModel(app: Application) : AndroidViewModel(app) {
     fun toData(entity: ProgramEntity): ProgramData = repository.toData(entity)
     fun exportJson(data: ProgramData): String = repository.exportJson(data)
     fun importJson(text: String): ProgramData = repository.importJson(text)
+
+    /** Заполняет журнал демо-тренировками. */
+    fun seedDemoLogs() {
+        viewModelScope.launch { repository.addDemoLogs() }
+    }
+
+    /** Очищает журнал. */
+    fun clearLogs() {
+        viewModelScope.launch { repository.clearLogs() }
+    }
 }
