@@ -90,7 +90,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var hrSum = 0L; private var hrCount = 0L; private var hrMax = 0
     private var speedSum = 0.0; private var speedCount = 0L
 
-    /** Проверка: дорожка готова к командам. */
     fun isTreadmillReady(): Boolean =
         _treadmillState.value == BleConnectionState.READY
 
@@ -149,8 +148,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _treadmillState.value = state
                 if (state == BleConnectionState.READY) onTreadmillReady(conn)
                 if (state == BleConnectionState.DISCONNECTED && protocol != null) {
-                    _statusMessage.value = "Дорожка отключена — тренировка на паузе"
-                    // Автопауза тренировки
+                    _statusMessage.value = "Дорожка отключена"
                     if (workoutManager.state.value.running && !workoutManager.state.value.paused) {
                         workoutManager.pause()
                     }
@@ -252,7 +250,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { protocol?.setIncline(safe) }
     }
 
-    /** Старт дорожки. Только если подключена. */
     fun startTreadmill() {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Сначала подключите дорожку"
@@ -261,16 +258,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { protocol?.start() }
     }
 
-    /** Стоп дорожки. */
     fun stopTreadmill() {
         if (!isTreadmillReady()) return
         viewModelScope.launch { protocol?.stop() }
     }
 
-    /**
-     * Экстренная остановка. Дорожка останавливается.
-     * Если тренировка шла — ставится на паузу, чтобы можно было продолжить.
-     */
     fun emergencyStop() {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Дорожка не подключена"
@@ -311,6 +303,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 delay(cfg.intervalSec.coerceAtLeast(5) * 1000L)
                 if (!cfg.hrEnabled) continue
                 if (!isTreadmillReady()) continue
+                // НЕ поднимаем скорость, если пользователь остановился
+                if (_targetSpeed.value <= 0.5) continue
                 val hr = _heartRate.value
                 if (hr <= 0) continue
                 val cur = _targetSpeed.value
@@ -323,7 +317,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun stopHrAutoLoop() { hrAutoJob?.cancel(); hrAutoJob = null }
 
-    /** Запуск программы. Только если дорожка подключена. */
     fun startWorkout(program: ProgramData) {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Сначала подключите дорожку"
@@ -331,17 +324,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         resetStats()
         resetHrHistory()
-        workoutManager.start(
-            scope = viewModelScope, program = program,
-            onSetSpeed = { setSpeed(it) },
-            onSetIncline = { setIncline(it) }
-        )
+
+        viewModelScope.launch {
+            // 1) Стартуем дорожку с минимальной скоростью
+            protocol?.start()
+            // 2) Даём дорожке время разогнаться
+            delay(600)
+            // 3) Запускаем программу — она сама выставит скорость первого сегмента
+            workoutManager.start(
+                scope = viewModelScope, program = program,
+                onSetSpeed = { setSpeed(it) },
+                onSetIncline = { setIncline(it) }
+            )
+        }
     }
 
     fun pauseWorkout() {
         if (!workoutManager.state.value.running) return
         workoutManager.pause()
-        // Останавливаем дорожку — человек должен остановиться
         if (isTreadmillReady()) {
             viewModelScope.launch { protocol?.stop() }
         }
@@ -354,12 +354,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _statusMessage.value = "Дорожка не подключена — не могу продолжить"
             return
         }
-        // Сначала запустим дорожку
         viewModelScope.launch {
             protocol?.start()
-            // Небольшая пауза, чтобы дорожка встала в режим
-            delay(200)
-            // Команды скорости/наклона отправятся автоматически из WorkoutManager
+            delay(500)
             workoutManager.resume()
         }
     }
