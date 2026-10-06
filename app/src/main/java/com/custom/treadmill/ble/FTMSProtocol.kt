@@ -28,7 +28,6 @@ class FTMSProtocol : ITreadmillProtocol {
     private var controlPointUuid: UUID? = null
     override val writeCharacteristicUuid: UUID? get() = controlPointUuid
 
-    // ---- Коалесцирующие отправители с повтором ----
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val sendMutex = Mutex()
     private val desiredSpeed = MutableStateFlow<Double?>(null)
@@ -38,16 +37,13 @@ class FTMSProtocol : ITreadmillProtocol {
     private var sendersStarted = false
 
     /** Задержка после последнего нажатия перед отправкой (мс). */
-    var debounceMs: Long = 250L
+    var debounceMs: Long = 200L
 
-    /** Пауза после успешной отправки команды (мс). */
-    var commandGapMs: Long = 400L
+    /** Сколько ждать подтверждения между попытками (мс). */
+    var confirmTimeoutMs: Long = 800L
 
-    /** Сколько ждать подтверждения от дорожки (мс). */
-    var confirmTimeoutMs: Long = 2500L
-
-    /** Максимум попыток отправки. */
-    var maxAttempts: Int = 3
+    /** Максимум попыток. */
+    var maxAttempts: Int = 2
 
     /** Округлять наклон до целых %. */
     var roundInclineToWhole: Boolean = true
@@ -96,25 +92,21 @@ class FTMSProtocol : ITreadmillProtocol {
                 delay(debounceMs)
 
                 var confirmed = false
-                var attempt = 1
-                while (attempt <= maxAttempts && !confirmed) {
-                    sendMutex.withLock {
-                        sendSpeedNow(target)
-                    }
+                for (attempt in 1..maxAttempts) {
+                    sendMutex.withLock { sendSpeedNow(target) }
                     lastSentSpeed = target
-                    confirmed = waitForSpeed(target, confirmTimeoutMs)
-                    if (!confirmed) {
-                        Log.w("FTMS", "Speed $target не подтверждена (попытка $attempt)")
-                        attempt++
-                        delay(150)
+                    delay(confirmTimeoutMs)
+                    if (abs(_data.value.speedKmh - target) < 0.15 ||
+                        (target == 0.0 && _data.value.speedKmh < 0.2)
+                    ) {
+                        confirmed = true
+                        break
                     }
+                    Log.w("FTMS", "Speed $target не подтверждена (попытка $attempt)")
                 }
-                if (confirmed) {
-                    Log.d("FTMS", "OK speed $target км/ч (попыток: $attempt)")
-                } else {
-                    Log.e("FTMS", "FAIL speed $target после $maxAttempts попыток")
-                }
-                delay(commandGapMs)
+                Log.d("FTMS", if (confirmed)
+                    "OK speed $target км/ч"
+                else "FAIL speed $target после $maxAttempts попыток")
             }
         }
 
@@ -125,67 +117,47 @@ class FTMSProtocol : ITreadmillProtocol {
                 delay(debounceMs)
 
                 var confirmed = false
-                var attempt = 1
-                while (attempt <= maxAttempts && !confirmed) {
-                    sendMutex.withLock {
-                        sendInclineNow(target)
-                    }
+                for (attempt in 1..maxAttempts) {
+                    sendMutex.withLock { sendInclineNow(target) }
                     lastSentIncline = target
-                    confirmed = waitForIncline(target, confirmTimeoutMs)
-                    if (!confirmed) {
-                        Log.w("FTMS", "Incline $target% не подтверждён (попытка $attempt)")
-                        attempt++
-                        delay(150)
+                    delay(confirmTimeoutMs)
+                    if (abs(_data.value.inclinePercent - target) < 0.6) {
+                        confirmed = true
+                        break
                     }
+                    Log.w("FTMS", "Incline $target% не подтверждён (попытка $attempt)")
                 }
-                if (confirmed) {
-                    Log.d("FTMS", "OK incline $target% (попыток: $attempt)")
-                } else {
-                    Log.e("FTMS", "FAIL incline $target% после $maxAttempts попыток")
-                }
-                delay(commandGapMs)
+                Log.d("FTMS", if (confirmed)
+                    "OK incline $target%"
+                else "FAIL incline $target% после $maxAttempts попыток")
             }
         }
     }
 
-    private suspend fun waitForSpeed(target: Double, timeoutMs: Long): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            if (abs(_data.value.speedKmh - target) < 0.15) return true
-            delay(100)
-        }
-        return false
-    }
-
-    private suspend fun waitForIncline(target: Double, timeoutMs: Long): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            if (abs(_data.value.inclinePercent - target) < 0.6) return true
-            delay(100)
-        }
-        return false
-    }
-
+    /** Отправляем команду скорости дважды с коротким интервалом — дорожка иногда пропускает первую. */
     private suspend fun sendSpeedNow(speedKmh: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
         val raw = (speedKmh * 100.0).roundToInt().coerceIn(0, 65535)
-        c.write(uuid, byteArrayOf(0x00), true)
-        delay(80)
         val cmd = byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
+        c.write(uuid, byteArrayOf(0x00), true); delay(60)
+        c.write(uuid, cmd, true); delay(120)
+        c.write(uuid, byteArrayOf(0x00), true); delay(60)
         c.write(uuid, cmd, true)
-        Log.d("FTMS", "-> speed $speedKmh ($cmd)")
+        Log.d("FTMS", "-> speed $speedKmh x2")
     }
 
+    /** То же для наклона. */
     private suspend fun sendInclineNow(percent: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
         val raw = (percent * 10.0).roundToInt().coerceIn(0, 32767)
-        c.write(uuid, byteArrayOf(0x00), true)
-        delay(80)
         val cmd = byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
+        c.write(uuid, byteArrayOf(0x00), true); delay(60)
+        c.write(uuid, cmd, true); delay(120)
+        c.write(uuid, byteArrayOf(0x00), true); delay(60)
         c.write(uuid, cmd, true)
-        Log.d("FTMS", "-> incline $percent% ($cmd)")
+        Log.d("FTMS", "-> incline $percent% x2")
     }
 
     override suspend fun requestControl(): Boolean {
@@ -193,45 +165,42 @@ class FTMSProtocol : ITreadmillProtocol {
         return conn?.write(uuid, byteArrayOf(0x00), true) ?: false
     }
 
+    /**
+     * Запуск дорожки.
+     * Последовательность: контроль → скорость (мин 1.0 км/ч) → старт (0x07).
+     */
     override suspend fun start(): Boolean {
         val uuid = controlPointUuid ?: return false
+        val c = conn ?: return false
+        val speed = desiredSpeed.value ?: 1.0
+        val raw = (speed * 100.0).roundToInt().coerceIn(50, 65535)
         sendMutex.withLock {
-            conn?.write(uuid, byteArrayOf(0x00), true)
-            delay(80)
-            conn?.write(uuid, byteArrayOf(0x07), true)
+            c.write(uuid, byteArrayOf(0x00), true); delay(100)
+            c.write(uuid, byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
+            delay(200)
+            c.write(uuid, byteArrayOf(0x07), true)
         }
-        Log.d("FTMS", "-> start")
+        Log.d("FTMS", "-> start (speed=$speed, cmd 07)")
         return true
     }
 
-    /**
-     * Стоп. Ключевая команда — установить скорость 0 (0x02 0x00 0x00).
-     * 0x08 0x01 (Stop/Pause) на этой дорожке игнорируется, но отправляем
-     * её второй — на всякий случай.
-     */
+    /** Стоп. Ставим скорость 0, потом 0x08 0x01. */
     override suspend fun stop(): Boolean {
         val uuid = controlPointUuid ?: return false
         val c = conn ?: return false
 
         sendMutex.withLock {
-            c.write(uuid, byteArrayOf(0x00), true)
-            delay(80)
-            c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
-            delay(80)
+            c.write(uuid, byteArrayOf(0x00), true); delay(80)
+            c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true); delay(120)
+            c.write(uuid, byteArrayOf(0x00), true); delay(80)
             c.write(uuid, byteArrayOf(0x08, 0x01), true)
         }
         lastSentSpeed = 0.0
-        desiredSpeed.value = null
+        desiredSpeed.value = 0.0
 
-        var confirmed = waitForSpeed(0.0, confirmTimeoutMs)
-        if (!confirmed) {
-            sendMutex.withLock {
-                c.write(uuid, byteArrayOf(0x00), true)
-                delay(80)
-                c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
-            }
-            confirmed = waitForSpeed(0.0, confirmTimeoutMs)
-        }
+        // Контрольная проверка через 1 сек
+        delay(900)
+        val confirmed = _data.value.speedKmh < 0.2
         Log.d("FTMS", if (confirmed) "OK stop" else "FAIL stop не подтверждён")
         return confirmed
     }
