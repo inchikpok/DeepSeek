@@ -13,8 +13,14 @@ android {
         applicationId = "com.custom.treadmill"
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+
+        // ⚠️ ВАЖНО: увеличивайте эту цифру перед каждой новой сборкой,
+        // которую хотите установить ПОВЕРХ старой версии.
+        versionCode = 7
+
+        // Человеческое имя версии — можно менять свободно, на установку не влияет.
+        versionName = "1.7"
+
         vectorDrawables { useSupportLibrary = true }
     }
 
