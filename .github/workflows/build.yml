@@ -22,12 +22,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.6'
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew || true
+          cache-read-only: false    # явно разрешаем запись кэша
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK как артефакт (без zip)
         uses: actions/upload-artifact@v4
