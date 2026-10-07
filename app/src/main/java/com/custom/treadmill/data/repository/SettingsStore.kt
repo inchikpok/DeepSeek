@@ -18,13 +18,12 @@ data class AppSettings(
     val manualWriteUuid: String = "",
     val manualNotifyUuid: String = "",
 
-    // НОВОЕ: тема приложения
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
 
     val minSpeedKmh: Double = 1.0,
     val maxSpeedKmh: Double = 12.0,
     val maxInclinePercent: Double = 15.0,
-    val inclineStep: Double = 1.0,   // дорожка принимает только целые %
+    val inclineStep: Double = 1.0,
     val hrEnabled: Boolean = false,
     val hrMode: HrMode = HrMode.TARGET,
     val targetHr: Int = 130,
@@ -33,7 +32,21 @@ data class AppSettings(
     val thresholdHigh: Int = 5,
     val thresholdLow: Int = 5,
     val intervalSec: Int = 30,
-    val stepKmh: Double = 0.5
+    val stepKmh: Double = 0.5,
+
+    // ---- Тумблеры совместимости FTMS ----
+
+    /** Отправлять 0x07 (Start) в start(). */
+    val sendStartCommand: Boolean = true,
+
+    /** Отправлять 0x00 (Request Control) перед каждой командой. */
+    val requestControlBeforeEachCommand: Boolean = true,
+
+    /**
+     * Отправлять 0x07 после каждой команды скорости.
+     * Без него belt не применяет новую скорость.
+     */
+    val sendStartAfterSpeedChange: Boolean = true
 )
 
 class SettingsStore(context: Context) {
