@@ -134,7 +134,6 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(6.dp))
 
-                    // 0x07 в start()
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Команда Start (0x07)", fontSize = 14.sp)
@@ -196,6 +195,22 @@ fun SettingsScreen(
                             vm.updateSettings { it.copy(maxSpeedKmh = d) }
                         },
                         label = { Text("Максимум, км/ч (по умолчанию 20)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = settings.speedStepKmh.toString(),
+                        onValueChange = { v ->
+                            val d = v.toDoubleOrNull() ?: return@OutlinedTextField
+                            vm.updateSettings { it.copy(speedStepKmh = d) }
+                        },
+                        label = { Text("Шаг кнопок +/−, км/ч") },
+                        supportingText = {
+                            Text(
+                                "По умолчанию 0.5. Можно 0.1, если belt стабильно принимает.",
+                                fontSize = 10.sp
+                            )
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
