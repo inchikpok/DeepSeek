@@ -134,11 +134,12 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(6.dp))
 
+                    // 0x07 в start()
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Команда Start (0x07)", fontSize = 14.sp)
                             Text(
-                                "Нужна, чтобы belt тронулся с нуля.",
+                                "Нужна, чтобы belt тронулся с нуля. Не выключайте.",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -162,7 +163,8 @@ fun SettingsScreen(
                         label = { Text("Повтор команды скорости, сек") },
                         supportingText = {
                             Text(
-                                "Belt держит скорость ~20 сек. Раз в 10 сек — безопасно.",
+                                "0 = выключено (рекомендуется — belt сам держит скорость, " +
+                                        "а повторение вызывает писк).",
                                 fontSize = 10.sp
                             )
                         },
@@ -193,7 +195,7 @@ fun SettingsScreen(
                             val d = v.toDoubleOrNull() ?: return@OutlinedTextField
                             vm.updateSettings { it.copy(maxSpeedKmh = d) }
                         },
-                        label = { Text("Максимум, км/ч") },
+                        label = { Text("Максимум, км/ч (по умолчанию 20)") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
