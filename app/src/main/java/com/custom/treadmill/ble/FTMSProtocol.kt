@@ -48,6 +48,30 @@ class FTMSProtocol : ITreadmillProtocol {
     /** Округлять наклон до целых %. */
     var roundInclineToWhole: Boolean = true
 
+    // ========================================================================
+    //  Тумблеры совместимости (меняются в Настройках, применяются сразу)
+    // ========================================================================
+
+    /** Отправлять 0x07 (Start/Resume) в методе start(). */
+    var sendStartCommand: Boolean = true
+
+    /**
+     * Отправлять 0x00 (Request Control) перед каждой командой скорости/наклона.
+     * В логе belt его спокойно принимает — по умолчанию ВКЛ.
+     */
+    var requestControlBeforeEachCommand: Boolean = true
+
+    /**
+     * Отправлять 0x07 (Start/Resume) ПОСЛЕ каждой команды скорости.
+     *
+     * КЛЮЧЕВОЕ: судя по логу, этот belt не применяет новую скорость, пока
+     * не получит 0x07. Тот же приём уже используется в start() — поэтому
+     * дорожка реагирует на «Старт», но игнорирует кнопки +/− скорости.
+     *
+     * По умолчанию ВКЛ.
+     */
+    var sendStartAfterSpeedChange: Boolean = true
+
     override suspend fun initialize(conn: BleConnection): Boolean {
         this.conn = conn
         var controlFound = false
@@ -134,30 +158,54 @@ class FTMSProtocol : ITreadmillProtocol {
         }
     }
 
-    /** Отправляем команду скорости дважды с коротким интервалом — дорожка иногда пропускает первую. */
+    /**
+     * Команда скорости. Формат, который реально понимает этот belt:
+     *   0x00           — Request Control (опционально)
+     *   0x02 XX XX     — Set Target Speed, XX XX = км/ч × 100
+     *   0x07           — Start/Resume: belt ПРИМЕНЯЕТ скорость только после этого
+     */
     private suspend fun sendSpeedNow(speedKmh: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
         val raw = (speedKmh * 100.0).roundToInt().coerceIn(0, 65535)
         val cmd = byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
-        c.write(uuid, byteArrayOf(0x00), true); delay(60)
-        c.write(uuid, cmd, true); delay(120)
-        c.write(uuid, byteArrayOf(0x00), true); delay(60)
+
+        if (requestControlBeforeEachCommand) {
+            c.write(uuid, byteArrayOf(0x00), true)
+            delay(80)
+        }
         c.write(uuid, cmd, true)
-        Log.d("FTMS", "-> speed $speedKmh x2")
+
+        // Ключевой момент: без 0x07 belt НЕ применяет новую скорость.
+        if (sendStartAfterSpeedChange && speedKmh > 0.0) {
+            delay(150)
+            c.write(uuid, byteArrayOf(0x07), true)
+        }
+
+        Log.d(
+            "FTMS",
+            "-> speed $speedKmh" +
+                    (if (requestControlBeforeEachCommand) " [RC]" else "") +
+                    (if (sendStartAfterSpeedChange && speedKmh > 0.0) " [07]" else "")
+        )
     }
 
-    /** То же для наклона. */
+    /**
+     * Команда наклона. Belt принимает 0x03 XX XX сам по себе — 0x07 не нужен.
+     * XX XX = % × 10.
+     */
     private suspend fun sendInclineNow(percent: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
         val raw = (percent * 10.0).roundToInt().coerceIn(0, 32767)
         val cmd = byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
-        c.write(uuid, byteArrayOf(0x00), true); delay(60)
-        c.write(uuid, cmd, true); delay(120)
-        c.write(uuid, byteArrayOf(0x00), true); delay(60)
+
+        if (requestControlBeforeEachCommand) {
+            c.write(uuid, byteArrayOf(0x00), true)
+            delay(80)
+        }
         c.write(uuid, cmd, true)
-        Log.d("FTMS", "-> incline $percent% x2")
+        Log.d("FTMS", "-> incline $percent%")
     }
 
     override suspend fun requestControl(): Boolean {
@@ -166,25 +214,41 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     /**
-     * Запуск дорожки.
-     * Последовательность: контроль → скорость (мин 1.0 км/ч) → старт (0x07).
+     * Запуск дорожки. Тот же паттерн, что и у скорости:
+     *   0x00 → 0x02 XX XX → 0x07
+     * Минимальная скорость — 1.0 км/ч (belt не любит 0.5).
      */
     override suspend fun start(): Boolean {
         val uuid = controlPointUuid ?: return false
         val c = conn ?: return false
-        val speed = desiredSpeed.value ?: 1.0
-        val raw = (speed * 100.0).roundToInt().coerceIn(50, 65535)
+        val s = desiredSpeed.value ?: 1.0
+        val speed = s.coerceAtLeast(1.0)
+        val raw = (speed * 100.0).roundToInt().coerceIn(100, 65535)
+
         sendMutex.withLock {
-            c.write(uuid, byteArrayOf(0x00), true); delay(100)
-            c.write(uuid, byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
+            c.write(uuid, byteArrayOf(0x00), true)
+            delay(100)
+            c.write(
+                uuid,
+                byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()),
+                true
+            )
             delay(200)
-            c.write(uuid, byteArrayOf(0x07), true)
+            if (sendStartCommand) {
+                c.write(uuid, byteArrayOf(0x07), true)
+            }
         }
-        Log.d("FTMS", "-> start (speed=$speed, cmd 07)")
+
+        lastSentSpeed = speed
+        desiredSpeed.value = speed
+        Log.d("FTMS", "-> start (speed=$speed, cmd07=$sendStartCommand)")
         return true
     }
 
-    /** Стоп. Ставим скорость 0, потом 0x08 0x01. */
+    /**
+     * Стоп. Сначала 02 00 00 (belt реагирует именно на это).
+     * Если через 900 мс скорость не упала — вторая попытка через 08 01.
+     */
     override suspend fun stop(): Boolean {
         val uuid = controlPointUuid ?: return false
         val c = conn ?: return false
@@ -192,16 +256,24 @@ class FTMSProtocol : ITreadmillProtocol {
         sendMutex.withLock {
             c.write(uuid, byteArrayOf(0x00), true); delay(80)
             c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true); delay(120)
-            c.write(uuid, byteArrayOf(0x00), true); delay(80)
-            c.write(uuid, byteArrayOf(0x08, 0x01), true)
+            c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
         }
         lastSentSpeed = 0.0
         desiredSpeed.value = 0.0
 
-        // Контрольная проверка через 1 сек
         delay(900)
+        if (_data.value.speedKmh < 0.2) {
+            Log.d("FTMS", "OK stop")
+            return true
+        }
+
+        Log.w("FTMS", "stop через 02 00 00 не сработал, пробуем 08 01")
+        sendMutex.withLock {
+            c.write(uuid, byteArrayOf(0x08, 0x01), true)
+        }
+        delay(600)
         val confirmed = _data.value.speedKmh < 0.2
-        Log.d("FTMS", if (confirmed) "OK stop" else "FAIL stop не подтверждён")
+        Log.d("FTMS", if (confirmed) "OK stop (08 01)" else "FAIL stop не подтверждён")
         return confirmed
     }
 
@@ -290,18 +362,16 @@ class FTMSProtocol : ITreadmillProtocol {
         }
     }
 
-    private fun u16(b: ByteArray, o: Int): Int {
-        return (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
-    }
+    private fun u16(b: ByteArray, o: Int): Int =
+        (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
 
     private fun s16(b: ByteArray, o: Int): Int {
         val raw = u16(b, o)
         return if (raw >= 0x8000) raw - 0x10000 else raw
     }
 
-    private fun u24(b: ByteArray, o: Int): Int {
-        return (b[o].toInt() and 0xFF) or
+    private fun u24(b: ByteArray, o: Int): Int =
+        (b[o].toInt() and 0xFF) or
                 ((b[o + 1].toInt() and 0xFF) shl 8) or
                 ((b[o + 2].toInt() and 0xFF) shl 16)
-    }
 }
