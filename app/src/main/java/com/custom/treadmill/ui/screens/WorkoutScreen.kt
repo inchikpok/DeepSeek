@@ -34,6 +34,7 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
     val treadmillState by vm.treadmillState.collectAsState()
 
     val treadmillReady = treadmillState == BleConnectionState.READY
+    val speedStep = settings.speedStepKmh
 
     LaunchedEffect(ws.finished) { if (ws.finished) vm.saveWorkoutLog() }
 
@@ -142,8 +143,8 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                     label = "Скорость",
                     value = "%.1f".format(targetSpeed),
                     unit = "км/ч",
-                    onMinus = { vm.setSpeed(targetSpeed - 1.0) },
-                    onPlus = { vm.setSpeed(targetSpeed + 1.0) },
+                    onMinus = { vm.setSpeed(targetSpeed - speedStep) },
+                    onPlus = { vm.setSpeed(targetSpeed + speedStep) },
                     modifier = Modifier.weight(1f)
                 )
                 MiniControl(
@@ -220,7 +221,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             // ---------- Кнопки ----------
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Пауза / Продолжить
                 val paused = ws.paused
                 Button(
                     onClick = { vm.togglePauseWorkout() },
@@ -242,7 +242,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                     )
                 }
 
-                // Быстрый стоп дорожки (без завершения программы)
                 Button(
                     onClick = { vm.emergencyStop() },
                     enabled = treadmillReady,
@@ -253,7 +252,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                     Text("СТОП!", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
 
-                // Сброс программы
                 OutlinedButton(
                     onClick = { vm.resetWorkout(); onBack() },
                     modifier = Modifier.weight(1f),
@@ -278,10 +276,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
         }
     }
 }
-
-// ================================================================
-//  Помощники
-// ================================================================
 
 @Composable
 private fun MiniControl(
