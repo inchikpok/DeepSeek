@@ -19,8 +19,10 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -36,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,9 +65,9 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
     val treadmillReady = treadmillState == BleConnectionState.READY
 
-    var hexInput by remember { mutableStateOf("02 96 00") }
+    var hexInput by rememberSaveable { mutableStateOf("02 96 00") }
     var savedMessage by remember { mutableStateOf<String?>(null) }
-    var tab by remember { mutableStateOf(0) }  // 0=Лог, 1=Справочник, 2=Конструктор
+    var tab by rememberSaveable { mutableStateOf(0) }  // 0=Лог, 1=Справочник, 2=Конструктор
 
     val listState = rememberLazyListState()
 
@@ -171,6 +174,12 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                             enabled = treadmillReady
                         ) { Text("Отпр.") }
                     }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Одна посылка = один write. Склеенные команды belt не понимает.",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
@@ -194,11 +203,13 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                 1 -> CommandReference(
                     treadmillReady = treadmillReady,
                     onSend = { vm.sendRawHex(it) },
+                    onStartBelt = { vm.startTreadmill() },
                     modifier = Modifier.weight(1f)
                 )
                 else -> CommandConstructor(
                     treadmillReady = treadmillReady,
                     onSend = { vm.sendRawHex(it) },
+                    onStartBelt = { vm.startTreadmill() },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -231,7 +242,7 @@ private fun LogView(
     listState: LazyListState,
     modifier: Modifier = Modifier
 ) {
-    Card(modifier.fillMaxWidth()) {
+    Card(modifier) {
         Column(Modifier.fillMaxSize().padding(8.dp)) {
             Text("Лог BLE", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             Spacer(Modifier.height(4.dp))
@@ -247,6 +258,7 @@ private fun LogView(
                         color = when {
                             line.contains("<-") -> Color(0xFF4CAF50)
                             line.contains("->") -> Color(0xFF64B5F6)
+                            line.contains("FTMS:") -> Color(0xFFFFB300)
                             else -> MaterialTheme.colorScheme.onSurface
                         }
                     )
@@ -267,28 +279,20 @@ private data class CmdEntry(
 )
 
 /**
- * Строит справочник: параметризованные команды для типовых скоростей
- * и наклонов, плюс команды управления. Все значения соответствуют тому,
- * что реально работает на FS-E629DD (проверено логами).
+ * Справочник проверенных команд для FS-E629DD.
+ *
+ * «Старт с нуля» здесь НЕТ намеренно — belt требует раздельные write
+ * (00, пауза, 07, пауза 4 сек), это делается кнопкой «Запустить belt».
  */
 private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
-    val speedsKmh = listOf(1, 2, 3, 4, 5, 6, 7, 8, 10, 12)
-
-    val speedStart = speedsKmh.map { kmh ->
-        val raw = kmh * 100
-        CmdEntry(
-            label = "$kmh км/ч",
-            hex = "00 02 %02X %02X 07".format(raw and 0xFF, (raw shr 8) and 0xFF),
-            note = "Старт с нуля"
-        )
-    }
+    val speedsKmh = listOf(1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20)
 
     val speedChange = speedsKmh.map { kmh ->
         val raw = kmh * 100
         CmdEntry(
             label = "$kmh км/ч",
             hex = "02 %02X %02X".format(raw and 0xFF, (raw shr 8) and 0xFF),
-            note = "Смена на ходу"
+            note = "Только на ходу"
         )
     }
 
@@ -304,11 +308,10 @@ private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
     return listOf(
         "Управление" to listOf(
             CmdEntry("Request Control", "00", "Запросить контроль"),
-            CmdEntry("Start / Resume", "07", "Запуск / продолжить"),
+            CmdEntry("Start / Resume", "07", "Только ПОСЛЕ 00 + паузы"),
             CmdEntry("Stop (наш способ)", "02 00 00", "Скорость → 0"),
             CmdEntry("Pause (стандарт FTMS)", "08 01", "На этом belt игнорируется")
         ),
-        "Скорость — старт с нуля" to speedStart,
         "Скорость — смена на ходу" to speedChange,
         "Наклон (целые %)" to inclineCmds
     )
@@ -318,6 +321,7 @@ private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
 private fun CommandReference(
     treadmillReady: Boolean,
     onSend: (String) -> Unit,
+    onStartBelt: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val groups = remember { buildCommandReference() }
@@ -341,6 +345,31 @@ private fun CommandReference(
                         Modifier.padding(10.dp),
                         fontSize = 12.sp
                     )
+                }
+            }
+        }
+
+        // Кнопка запуска belt в самом верху
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Запустить belt", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Отправляет 00 → пауза → 07, belt отсчитает 3-2-1 и поедет на 1.0 км/ч.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = onStartBelt,
+                        enabled = treadmillReady,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Запустить belt")
+                    }
                 }
             }
         }
@@ -416,10 +445,11 @@ private fun CommandReference(
 private fun CommandConstructor(
     treadmillReady: Boolean,
     onSend: (String) -> Unit,
+    onStartBelt: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var speedStr by remember { mutableStateOf("3") }
-    var inclineStr by remember { mutableStateOf("2") }
+    var speedStr by rememberSaveable { mutableStateOf("3") }
+    var inclineStr by rememberSaveable { mutableStateOf("2") }
     var lastSent by remember { mutableStateOf<String?>(null) }
 
     val speed = speedStr.replace(',', '.').toDoubleOrNull() ?: 0.0
@@ -444,15 +474,40 @@ private fun CommandConstructor(
             }
         }
 
+        // ---------- Запуск ----------
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp)) {
+                Text("Запуск дорожки", fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Старт с нуля требует раздельных write. Кнопка сделает всё правильно: " +
+                            "00 → пауза → 07, belt отсчитает 3-2-1 и поедет на 1.0 км/ч. " +
+                            "Затем можно задать скорость ниже.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = onStartBelt,
+                    enabled = treadmillReady,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Запустить belt")
+                }
+            }
+        }
+
         // ---------- Скорость ----------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
-                Text("Скорость", fontWeight = FontWeight.SemiBold)
+                Text("Скорость (belt должен ехать)", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
                     value = speedStr,
                     onValueChange = { speedStr = it },
-                    label = { Text("км/ч (целые, наш belt не понимает 0.5)") },
+                    label = { Text("км/ч (целые — belt не понимает 0.5)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -461,8 +516,8 @@ private fun CommandConstructor(
                 val raw = (speed * 100).roundToInt().coerceIn(0, 65535)
                 val b1 = raw and 0xFF
                 val b2 = (raw shr 8) and 0xFF
-                val startHex = "00 02 %02X %02X 07".format(b1, b2)
                 val changeHex = "02 %02X %02X".format(b1, b2)
+                val stopHex = "02 00 00"
 
                 Row(
                     Modifier.fillMaxWidth(),
@@ -470,24 +525,27 @@ private fun CommandConstructor(
                 ) {
                     Button(
                         onClick = {
-                            onSend(startHex)
-                            lastSent = "speed=$speed start ($startHex)"
+                            onSend(changeHex)
+                            lastSent = "speed=$speed ($changeHex)"
                         },
                         enabled = treadmillReady && speed > 0,
                         modifier = Modifier.weight(1f)
-                    ) { Text("Старт с нуля", fontSize = 12.sp) }
+                    ) { Text("Применить", fontSize = 12.sp) }
                     OutlinedButton(
                         onClick = {
-                            onSend(changeHex)
-                            lastSent = "speed=$speed change ($changeHex)"
+                            onSend(stopHex)
+                            lastSent = "стоп ($stopHex)"
                         },
-                        enabled = treadmillReady && speed > 0,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Смена на ходу", fontSize = 12.sp) }
+                        enabled = treadmillReady,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) { Text("Стоп", fontSize = 12.sp) }
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "$startHex   /   $changeHex",
+                    changeHex,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
