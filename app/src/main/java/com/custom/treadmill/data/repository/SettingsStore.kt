@@ -21,7 +21,7 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
 
     val minSpeedKmh: Double = 1.0,
-    val maxSpeedKmh: Double = 12.0,
+    val maxSpeedKmh: Double = 20.0,          // ← было 12, дорожка тянет 20
     val maxInclinePercent: Double = 15.0,
     val inclineStep: Double = 1.0,
     val hrEnabled: Boolean = false,
@@ -34,17 +34,14 @@ data class AppSettings(
     val intervalSec: Int = 30,
     val stepKmh: Double = 0.5,
 
-    // ---- Совместимость FTMS ----
-
-    /** Отправлять 0x07 в start() и при смене скорости на остановленном belt. */
+    /** Отправлять 0x07 в start(). */
     val sendStartCommand: Boolean = true,
 
     /**
-     * Период повторения команды скорости, пока belt едет (сек).
-     * Belt держит скорость ~20 сек, потом сам возвращается на 1.00.
-     * 10 сек — безопасно.
+     * Период повторения скорости (сек). 0 = выключено.
+     * Belt держит скорость сам — включение вызывает писк.
      */
-    val speedKeepAliveSec: Int = 10
+    val speedKeepAliveSec: Int = 0
 )
 
 class SettingsStore(context: Context) {
