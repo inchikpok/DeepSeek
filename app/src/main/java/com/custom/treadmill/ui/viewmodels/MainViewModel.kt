@@ -87,8 +87,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var hrAutoJob: Job? = null
     private var settingsCollectorJob: Job? = null
-
-    /** Защита от двойного сохранения лога (natural finish + stopWorkout). */
     private var workoutLogSaved = false
 
     private var hrSum = 0L; private var hrCount = 0L; private var hrMax = 0
@@ -172,6 +170,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ProtocolType.FTMS -> FTMSProtocol().apply {
                     sendStartCommand = s.sendStartCommand
                     speedKeepAliveSec = s.speedKeepAliveSec
+                    onLog = { msg -> addLog(msg) }
                 }
                 ProtocolType.FITSHOW -> FitShowProprietaryProtocol(
                     manualWriteUuid = s.manualWriteUuid.takeIf { it.isNotBlank() }?.toUuidSafe(),
@@ -181,7 +180,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             protocol = p
             addLog("Протокол: ${p.protocolName}")
 
-            // Живое обновление настроек протокола без переподключения
             settingsCollectorJob?.cancel()
             settingsCollectorJob = viewModelScope.launch {
                 settingsStore.settings.collect { newS ->
@@ -296,7 +294,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             protocol?.stop()
             protocol?.setIncline(0.0)
             setAutoHrEnabled(false)
-            saveWorkoutLog()      // сохраняем то, что успели набегать
+            saveWorkoutLog()
             _statusMessage.value = "ЭКСТРЕННАЯ ОСТАНОВКА"
             _targetSpeed.value = 0.0
             _targetIncline.value = 0.0
@@ -348,8 +346,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         workoutLogSaved = false
 
         viewModelScope.launch {
+            // Belt стартует через countdown ~4 сек и выходит на 1.0.
             protocol?.start()
-            delay(600)
+            // Ждём countdown + запас
+            delay(5500)
             workoutManager.start(
                 scope = viewModelScope, program = program,
                 onSetSpeed = { setSpeed(it) },
@@ -375,7 +375,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             protocol?.start()
-            delay(500)
+            // Ждём countdown
+            delay(5500)
             workoutManager.resume()
         }
     }
@@ -388,19 +389,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Останавливает тренировку и сохраняет лог.
-     * Вызывается кнопкой «← Назад» в WorkoutScreen.
-     */
     fun stopWorkout() {
         saveWorkoutLog()
         workoutManager.stop()
     }
 
-    /**
-     * Сброс программы. Лог тоже сохраняется — тренировка была,
-     * пользователь сам почистит журнал, если не нужна.
-     */
     fun resetWorkout() {
         saveWorkoutLog()
         workoutManager.stop()
@@ -410,10 +403,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         hrSum = 0L; hrCount = 0L; hrMax = 0; speedSum = 0.0; speedCount = 0L
     }
 
-    /**
-     * Сохраняет лог текущей тренировки.
-     * Идемпотентно — повторный вызов не создаёт дубликат (флаг workoutLogSaved).
-     */
     fun saveWorkoutLog() {
         if (workoutLogSaved) return
         val ws = workoutManager.state.value
