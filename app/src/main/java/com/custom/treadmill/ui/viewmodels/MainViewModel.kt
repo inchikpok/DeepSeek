@@ -86,6 +86,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val workoutState = workoutManager.state
 
     private var hrAutoJob: Job? = null
+    private var settingsCollectorJob: Job? = null
+
+    /** Защита от двойного сохранения лога (natural finish + stopWorkout). */
+    private var workoutLogSaved = false
 
     private var hrSum = 0L; private var hrCount = 0L; private var hrMax = 0
     private var speedSum = 0.0; private var speedCount = 0L
@@ -165,7 +169,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val s = settingsStore.settings.value
             val p: ITreadmillProtocol = when (s.protocol) {
-                ProtocolType.FTMS -> FTMSProtocol()
+                ProtocolType.FTMS -> FTMSProtocol().apply {
+                    sendStartCommand = s.sendStartCommand
+                    requestControlBeforeEachCommand = s.requestControlBeforeEachCommand
+                    sendStartAfterSpeedChange = s.sendStartAfterSpeedChange
+                }
                 ProtocolType.FITSHOW -> FitShowProprietaryProtocol(
                     manualWriteUuid = s.manualWriteUuid.takeIf { it.isNotBlank() }?.toUuidSafe(),
                     manualNotifyUuid = s.manualNotifyUuid.takeIf { it.isNotBlank() }?.toUuidSafe()
@@ -173,6 +181,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             protocol = p
             addLog("Протокол: ${p.protocolName}")
+
+            // Живое обновление тумблеров без переподключения
+            settingsCollectorJob?.cancel()
+            settingsCollectorJob = viewModelScope.launch {
+                settingsStore.settings.collect { newS ->
+                    (p as? FTMSProtocol)?.apply {
+                        sendStartCommand = newS.sendStartCommand
+                        requestControlBeforeEachCommand = newS.requestControlBeforeEachCommand
+                        sendStartAfterSpeedChange = newS.sendStartAfterSpeedChange
+                    }
+                }
+            }
+
             viewModelScope.launch { p.data.collect { _treadmillData.value = it } }
             val ok = p.initialize(conn)
             addLog(if (ok) "Протокол инициализирован" else "Протокол инициализирован с ошибками")
@@ -183,6 +204,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun disconnectTreadmill() {
+        settingsCollectorJob?.cancel()
+        settingsCollectorJob = null
         protocol = null
         treadmillConn?.disconnect()
         treadmillConn = null
@@ -275,6 +298,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             protocol?.stop()
             protocol?.setIncline(0.0)
             setAutoHrEnabled(false)
+            saveWorkoutLog()      // сохраняем то, что успели набегать
             _statusMessage.value = "ЭКСТРЕННАЯ ОСТАНОВКА"
             _targetSpeed.value = 0.0
             _targetIncline.value = 0.0
@@ -303,7 +327,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 delay(cfg.intervalSec.coerceAtLeast(5) * 1000L)
                 if (!cfg.hrEnabled) continue
                 if (!isTreadmillReady()) continue
-                // НЕ поднимаем скорость, если пользователь остановился
                 if (_targetSpeed.value <= 0.5) continue
                 val hr = _heartRate.value
                 if (hr <= 0) continue
@@ -324,13 +347,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         resetStats()
         resetHrHistory()
+        workoutLogSaved = false
 
         viewModelScope.launch {
-            // 1) Стартуем дорожку с минимальной скоростью
             protocol?.start()
-            // 2) Даём дорожке время разогнаться
             delay(600)
-            // 3) Запускаем программу — она сама выставит скорость первого сегмента
             workoutManager.start(
                 scope = viewModelScope, program = program,
                 onSetSpeed = { setSpeed(it) },
@@ -369,31 +390,61 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun stopWorkout() = workoutManager.stop()
-    fun resetWorkout() = workoutManager.reset()
+    /**
+     * Останавливает тренировку и сохраняет лог.
+     * Вызывается кнопкой «← Назад» в WorkoutScreen.
+     */
+    fun stopWorkout() {
+        saveWorkoutLog()
+        workoutManager.stop()
+    }
+
+    /**
+     * Сброс программы. Лог тоже сохраняется — тренировка была,
+     * пользователь сам почистит журнал, если не нужна.
+     */
+    fun resetWorkout() {
+        saveWorkoutLog()
+        workoutManager.stop()
+    }
 
     private fun resetStats() {
         hrSum = 0L; hrCount = 0L; hrMax = 0; speedSum = 0.0; speedCount = 0L
     }
 
+    /**
+     * Сохраняет лог текущей тренировки.
+     * Идемпотентно — повторный вызов не создаёт дубликат (флаг workoutLogSaved).
+     */
     fun saveWorkoutLog() {
+        if (workoutLogSaved) return
         val ws = workoutManager.state.value
         if (ws.totalElapsedSec <= 0) return
+        workoutLogSaved = true
+
+        val data = _treadmillData.value
+        val avgHr = if (hrCount > 0) (hrSum / hrCount).toInt() else 0
+        val maxHrCopy = hrMax
+        val avgSpd = if (speedCount > 0) speedSum / speedCount else 0.0
+        val durationSec = ws.totalElapsedSec
+        val programName = ws.programName.ifBlank { "Ручная тренировка" }
+
         viewModelScope.launch {
             repository.addLog(
                 WorkoutLogEntity(
                     dateMillis = System.currentTimeMillis(),
-                    programName = ws.programName.ifBlank { "Ручная тренировка" },
-                    durationSec = ws.totalElapsedSec,
-                    distanceKm = _treadmillData.value.distanceKm,
-                    calories = _treadmillData.value.calories,
-                    avgHeartRate = if (hrCount > 0) (hrSum / hrCount).toInt() else 0,
-                    maxHeartRate = hrMax,
-                    avgSpeedKmh = if (speedCount > 0) speedSum / speedCount else 0.0
+                    programName = programName,
+                    durationSec = durationSec,
+                    distanceKm = data.distanceKm,
+                    calories = data.calories,
+                    avgHeartRate = avgHr,
+                    maxHeartRate = maxHrCopy,
+                    avgSpeedKmh = avgSpd
                 )
             )
-            addLog("Тренировка сохранена")
+            addLog("Тренировка сохранена в журнал")
         }
+        resetStats()
     }
 
     fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.update(transform)
