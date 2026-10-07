@@ -142,8 +142,8 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                     label = "Скорость",
                     value = "%.1f".format(targetSpeed),
                     unit = "км/ч",
-                    onMinus = { vm.setSpeed(targetSpeed - 0.5) },
-                    onPlus = { vm.setSpeed(targetSpeed + 0.5) },
+                    onMinus = { vm.setSpeed(targetSpeed - 1.0) },
+                    onPlus = { vm.setSpeed(targetSpeed + 1.0) },
                     modifier = Modifier.weight(1f)
                 )
                 MiniControl(
