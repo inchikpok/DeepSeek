@@ -1,5 +1,6 @@
 package com.custom.treadmill.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,7 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -27,7 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp                        // ← ЭТО БЫЛО ПРОПУЩЕНО
+import androidx.compose.ui.unit.sp
 import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.data.repository.ProtocolType
 import com.custom.treadmill.data.repository.ThemeMode
@@ -119,6 +120,77 @@ fun SettingsScreen(
                         label = { Text("UUID уведомлений (manual, опц.)") },
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+
+                    Text("Дополнительно (FTMS)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Применяется сразу, без переподключения.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+
+                    // 0x00 перед каждой командой
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Request Control (0x00) перед командой", fontSize = 14.sp)
+                            Text(
+                                "Belt принимает его в логе — по умолчанию вкл.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = settings.requestControlBeforeEachCommand,
+                            onCheckedChange = { v ->
+                                vm.updateSettings { it.copy(requestControlBeforeEachCommand = v) }
+                            }
+                        )
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // 0x07 после смены скорости
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Start (0x07) после смены скорости", fontSize = 14.sp)
+                            Text(
+                                "КЛЮЧЕВОЕ: без 0x07 belt игнорирует +/− скорости.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = settings.sendStartAfterSpeedChange,
+                            onCheckedChange = { v ->
+                                vm.updateSettings { it.copy(sendStartAfterSpeedChange = v) }
+                            }
+                        )
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // 0x07 в start()
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Start (0x07) в методе Старт", fontSize = 14.sp)
+                            Text(
+                                "Выключать не рекомендуется.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = settings.sendStartCommand,
+                            onCheckedChange = { v ->
+                                vm.updateSettings { it.copy(sendStartCommand = v) }
+                            }
+                        )
+                    }
                 }
             }
 
@@ -197,7 +269,7 @@ fun SettingsScreen(
                             onCheckedChange = { vm.setAutoHrEnabled(it) }
                         )
                     }
-                    Divider()
+                    HorizontalDivider()
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(
@@ -225,8 +297,11 @@ fun SettingsScreen(
                             label = { Text("Целевой пульс") },
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Row {
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             OutlinedTextField(
                                 value = settings.thresholdHigh.toString(),
                                 onValueChange = { v ->
@@ -236,7 +311,6 @@ fun SettingsScreen(
                                 label = { Text("X (выше цели, +)") },
                                 modifier = Modifier.weight(1f)
                             )
-                            Spacer(Modifier.height(1.dp))
                             OutlinedTextField(
                                 value = settings.thresholdLow.toString(),
                                 onValueChange = { v ->
@@ -248,7 +322,10 @@ fun SettingsScreen(
                             )
                         }
                     } else {
-                        Row {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             OutlinedTextField(
                                 value = settings.zoneMin.toString(),
                                 onValueChange = { v ->
