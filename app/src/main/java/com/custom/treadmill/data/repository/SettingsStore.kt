@@ -34,19 +34,17 @@ data class AppSettings(
     val intervalSec: Int = 30,
     val stepKmh: Double = 0.5,
 
-    // ---- Тумблеры совместимости FTMS ----
+    // ---- Совместимость FTMS ----
 
-    /** Отправлять 0x07 (Start) в start(). */
+    /** Отправлять 0x07 в start() и при смене скорости на остановленном belt. */
     val sendStartCommand: Boolean = true,
 
-    /** Отправлять 0x00 (Request Control) перед каждой командой. */
-    val requestControlBeforeEachCommand: Boolean = true,
-
     /**
-     * Отправлять 0x07 после каждой команды скорости.
-     * Без него belt не применяет новую скорость.
+     * Период повторения команды скорости, пока belt едет (сек).
+     * Belt держит скорость ~20 сек, потом сам возвращается на 1.00.
+     * 10 сек — безопасно.
      */
-    val sendStartAfterSpeedChange: Boolean = true
+    val speedKeepAliveSec: Int = 10
 )
 
 class SettingsStore(context: Context) {
