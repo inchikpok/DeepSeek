@@ -278,6 +278,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Старт вручную (с главного экрана).
      * Если стояли на паузе — восстановит запомненную скорость.
+     *
+     * После запуска проверяем, поехал ли belt. Если нет — belt,
+     * скорее всего, в «спящем» режиме — показываем подсказку про
+     * физическую кнопку.
      */
     fun startTreadmill() {
         if (!isTreadmillReady()) {
@@ -294,6 +298,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 protocol?.setSpeed(1.0)
             }
             protocol?.start()
+
+            // Belt должен поехать через ~4-5 сек (countdown 3-2-1).
+            // Если через 6.5 сек всё ещё стоит — belt не отвечает.
+            delay(6500)
+            if (_treadmillData.value.speedKmh < 0.3) {
+                _statusMessage.value =
+                    "Дорожка не отвечает. Нажмите любую кнопку на дорожке и попробуйте снова."
+            }
         }
     }
 
@@ -391,6 +403,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             protocol?.start()
             delay(5500)
+
+            // Проверяем, поехал ли belt. Если нет — не запускаем программу,
+            // иначе таймер пойдёт впустую.
+            if (_treadmillData.value.speedKmh < 0.3) {
+                _statusMessage.value =
+                    "Дорожка не отвечает. Нажмите любую кнопку на дорожке и запустите снова."
+                return@launch
+            }
+
             workoutManager.start(
                 scope = viewModelScope, program = program,
                 onSetSpeed = { setSpeed(it) },
@@ -417,6 +438,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             protocol?.start()
             delay(5500)
+
+            // Если belt не ответил (спит) — не продолжаем.
+            if (_treadmillData.value.speedKmh < 0.3) {
+                _statusMessage.value =
+                    "Дорожка не отвечает. Нажмите кнопку на дорожке и продолжите снова."
+                return@launch
+            }
+
             workoutManager.resume()
         }
     }
