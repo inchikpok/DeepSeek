@@ -51,8 +51,8 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val settings by vm.settings.collectAsState()
     val paused by vm.isPaused.collectAsState()
 
-    // Готовность дорожки
     val treadmillReady = treadmillState == BleConnectionState.READY
+    val speedStep = settings.speedStepKmh
 
     var permsGranted by remember { mutableStateOf(hasBlePermissions(ctx)) }
     val permLauncher = rememberLauncherForActivityResult(
@@ -124,8 +124,8 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         label = "Скорость",
                         value = "%.1f".format(targetSpeed),
                         unit = "км/ч",
-                        onMinus = { vm.setSpeed(targetSpeed - 1.0) },
-                        onPlus = { vm.setSpeed(targetSpeed + 1.0) },
+                        onMinus = { vm.setSpeed(targetSpeed - speedStep) },
+                        onPlus = { vm.setSpeed(targetSpeed + speedStep) },
                         modifier = Modifier.weight(1f)
                     )
                     ControlTile(
@@ -437,7 +437,6 @@ private fun ControlTile(
     }
 }
 
-/** Метрика с центрированием по горизонтали. */
 @Composable
 private fun MetricBlock(
     label: String,
