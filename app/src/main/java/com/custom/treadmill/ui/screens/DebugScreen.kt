@@ -21,9 +21,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -72,7 +70,7 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
     var hexInput by rememberSaveable { mutableStateOf("02 96 00") }
     var savedMessage by remember { mutableStateOf<String?>(null) }
-    var tab by rememberSaveable { mutableStateOf(0) }  // 0=Лог, 1=Справочник, 2=Конструктор
+    var tab by rememberSaveable { mutableStateOf(0) }
 
     val listState = rememberLazyListState()
 
@@ -100,7 +98,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().padding(12.dp)) {
 
-            // ---------- Шапка ----------
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -145,7 +142,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // ---------- Статус ----------
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(10.dp)) {
                     Text("Дорожка: ${treadmillName ?: "—"}", fontSize = 12.sp)
@@ -161,7 +157,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Ручной ввод hex ----------
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(10.dp)) {
                     Text("Отправить команду (hex)", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -194,7 +189,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Табы ----------
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -206,7 +200,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Контент таба ----------
             when (tab) {
                 0 -> LogView(logs, listState, Modifier.weight(1f))
                 1 -> CommandReference(
@@ -214,8 +207,7 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                     currentSpeedKmh = data.speedKmh,
                     onSend = { vm.sendRawHex(it) },
                     onStartBelt = { vm.startTreadmill() },
-                    onSpeedPlus = { vm.setSpeed(data.speedKmh + 1.0) },
-                    onSpeedMinus = { vm.setSpeed((data.speedKmh - 1.0).coerceAtLeast(1.0)) },
+                    onAdjustSpeed = { delta -> vm.setSpeed(data.speedKmh + delta) },
                     modifier = Modifier.weight(1f)
                 )
                 else -> CommandConstructor(
@@ -228,10 +220,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
         }
     }
 }
-
-// =====================================================================
-//  Вспомогательные компоненты
-// =====================================================================
 
 @Composable
 private fun TabButton(text: String, selected: Boolean, onClick: () -> Unit) {
@@ -280,23 +268,26 @@ private fun LogView(
     }
 }
 
-// =====================================================================
-//  Справочник команд
-// =====================================================================
-
 private data class CmdEntry(
     val label: String,
     val hex: String,
     val note: String = ""
 )
 
+/**
+ * Справочник проверенных команд для FS-E629DD.
+ * Скорости включают дробные (0.5, 1.5, 2.5 …) — belt их принимает.
+ */
 private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
-    val speedsKmh = listOf(1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20)
+    val speedsKmh = listOf(
+        0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0,
+        6.0, 7.0, 8.0, 10.0, 12.0, 15.0, 20.0
+    )
 
     val speedChange = speedsKmh.map { kmh ->
-        val raw = kmh * 100
+        val raw = (kmh * 100).roundToInt()
         CmdEntry(
-            label = "$kmh км/ч",
+            label = "%.1f км/ч".format(kmh),
             hex = "02 %02X %02X".format(raw and 0xFF, (raw shr 8) and 0xFF),
             note = "Только на ходу"
         )
@@ -330,8 +321,7 @@ private fun CommandReference(
     currentSpeedKmh: Double,
     onSend: (String) -> Unit,
     onStartBelt: () -> Unit,
-    onSpeedPlus: () -> Unit,
-    onSpeedMinus: () -> Unit,
+    onAdjustSpeed: (Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val groups = remember { buildCommandReference() }
@@ -359,7 +349,6 @@ private fun CommandReference(
             }
         }
 
-        // ---------- Запуск + быстрая регулировка скорости ----------
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -396,26 +385,32 @@ private fun CommandReference(
                     Spacer(Modifier.height(6.dp))
                     Row(
                         Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         OutlinedButton(
-                            onClick = onSpeedMinus,
+                            onClick = { onAdjustSpeed(-1.0) },
                             enabled = treadmillReady && currentSpeedKmh > 1.0,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("1 км/ч", fontSize = 13.sp)
-                        }
-                        Button(
-                            onClick = onSpeedPlus,
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) { Text("−1", fontSize = 12.sp) }
+                        OutlinedButton(
+                            onClick = { onAdjustSpeed(-0.5) },
                             enabled = treadmillReady && currentSpeedKmh > 0.5,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("1 км/ч", fontSize = 13.sp)
-                        }
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) { Text("−0.5", fontSize = 12.sp) }
+                        Button(
+                            onClick = { onAdjustSpeed(0.5) },
+                            enabled = treadmillReady && currentSpeedKmh > 0.5,
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) { Text("+0.5", fontSize = 12.sp) }
+                        Button(
+                            onClick = { onAdjustSpeed(1.0) },
+                            enabled = treadmillReady && currentSpeedKmh > 0.5,
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) { Text("+1", fontSize = 12.sp) }
                     }
                 }
             }
@@ -484,10 +479,6 @@ private fun CommandReference(
     }
 }
 
-// =====================================================================
-//  Конструктор команд
-// =====================================================================
-
 @Composable
 private fun CommandConstructor(
     treadmillReady: Boolean,
@@ -523,7 +514,6 @@ private fun CommandConstructor(
             }
         }
 
-        // ---------- Запуск ----------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("Запуск дорожки", fontWeight = FontWeight.SemiBold)
@@ -548,7 +538,6 @@ private fun CommandConstructor(
             }
         }
 
-        // ---------- Скорость ----------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("Скорость (belt должен ехать)", fontWeight = FontWeight.SemiBold)
@@ -556,7 +545,7 @@ private fun CommandConstructor(
                 OutlinedTextField(
                     value = speedStr,
                     onValueChange = { speedStr = it },
-                    label = { Text("км/ч (целые — belt не понимает 0.5)") },
+                    label = { Text("км/ч (можно дробные, например 1.5)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -602,7 +591,6 @@ private fun CommandConstructor(
             }
         }
 
-        // ---------- Наклон ----------
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("Наклон", fontWeight = FontWeight.SemiBold)
@@ -610,7 +598,7 @@ private fun CommandConstructor(
                 OutlinedTextField(
                     value = inclineStr,
                     onValueChange = { inclineStr = it },
-                    label = { Text("% (целые — belt принимает только целые)") },
+                    label = { Text("% (belt принимает целые)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -658,10 +646,6 @@ private fun CommandConstructor(
         Spacer(Modifier.height(12.dp))
     }
 }
-
-// =====================================================================
-//  Экспорт лога
-// =====================================================================
 
 private fun buildLogContent(logs: List<String>, state: String, protocol: String): String {
     val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
