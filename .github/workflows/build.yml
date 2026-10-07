@@ -5,11 +5,15 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout кода
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup JDK 17
@@ -19,18 +23,44 @@ jobs:
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.6'
-          cache-read-only: false    # явно разрешаем запись кэша
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-      - name: Upload APK как артефакт (без zip)
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Read version from build.gradle.kts
+        id: version
+        run: |
+          VERSION_NAME=$(grep -E 'versionName' app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION_CODE=$(grep -E 'versionCode' app/build.gradle.kts | head -1 | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION_NAME}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+      - name: Rename APK
+        run: |
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk \
+             "artifacts/TreadmillControl-${{ steps.version.outputs.name }}.apk"
+
+      - name: Upload artifact (запасной вариант — zip)
         uses: actions/upload-artifact@v4
         with:
           name: treadmill-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          archive: false
-          if-no-files-found: error
+          path: artifacts/TreadmillControl-${{ steps.version.outputs.name }}.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Treadmill Control ${{ steps.version.outputs.name }} (build ${{ steps.version.outputs.code }})"
+          body: |
+            Автосборка из коммита ${{ github.sha }}.
+            Скачайте `.apk` ниже и откройте на телефоне — Android предложит обновить.
+          files: artifacts/TreadmillControl-${{ steps.version.outputs.name }}.apk
+          draft: false
+          prerelease: false
