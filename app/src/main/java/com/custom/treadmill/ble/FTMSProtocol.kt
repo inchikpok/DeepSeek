@@ -34,7 +34,6 @@ class FTMSProtocol : ITreadmillProtocol {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val sendMutex = Mutex()
 
-    /** Колбэк для отправки сообщений в Debug-экран приложения. */
     var onLog: ((String) -> Unit)? = null
 
     private val speedCommands = MutableSharedFlow<Double>(
@@ -48,25 +47,20 @@ class FTMSProtocol : ITreadmillProtocol {
     private var lastSentIncline = -1.0
     private var sendersStarted = false
 
-    /** Задержка после последнего нажатия (мс). */
     var debounceMs: Long = 350L
-
-    /** Округлять наклон до целых %. */
     var roundInclineToWhole: Boolean = true
 
-    /** Округлять скорость вниз до целых км/ч. */
-    var speedResolutionKmh: Double = 1.0
+    /**
+     * Разрешение скорости в км/ч.
+     *
+     * 0.0 = НЕ округлять (belt поддерживает дробные, например 0.1 км/ч).
+     * Поставьте, например, 0.5 — если belt начнёт капризничать с 0.1.
+     */
+    var speedResolutionKmh: Double = 0.0
 
-    /** Отправлять 0x07 (Start). */
     var sendStartCommand: Boolean = true
-
-    /** Пауза между 0x00 и 0x07 в команде старта (мс). */
     var startPreCommandDelayMs: Long = 150L
-
-    /** Сколько ждать после 0x07, пока belt отсчитает 3-2-1 (мс). */
     var startCountdownMs: Long = 4500L
-
-    /** Период повторения скорости (сек). 0 = выключено. */
     var speedKeepAliveSec: Int = 0
 
     private var keepAliveJob: Job? = null
@@ -111,21 +105,11 @@ class FTMSProtocol : ITreadmillProtocol {
 
         delay(300)
         requestControl()
-
-        // Пытаемся разбудить belt — некоторые прошивки требуют
-        // последовательности команд перед началом работы.
         wakeUp()
 
         return controlFound
     }
 
-    /**
-     * Wake-up burst: пытается разбудить belt из «спящего» режима.
-     * Шлёт: 00 (Request Control) → 01 (Reset) → 00.
-     *
-     * Если belt уже разбужен физической кнопкой — команды просто
-     * игнорируются, вреда нет.
-     */
     private suspend fun wakeUp() {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
@@ -142,7 +126,6 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     private fun startSenders() {
-        // ---------- Отправитель СКОРОСТИ ----------
         scope.launch {
             speedCommands.collectLatest { target ->
                 delay(debounceMs)
@@ -152,7 +135,7 @@ class FTMSProtocol : ITreadmillProtocol {
                 if (target > 0.5 && wasStopped) {
                     startBeltAndFollowUp(target)
                 } else {
-                    if (abs(_data.value.speedKmh - target) < 0.1) {
+                    if (abs(_data.value.speedKmh - target) < 0.05) {
                         log("скорость уже $target, пропускаю")
                     } else {
                         sendSpeedRaw(target)
@@ -165,7 +148,6 @@ class FTMSProtocol : ITreadmillProtocol {
             }
         }
 
-        // ---------- Отправитель НАКЛОНА ----------
         scope.launch {
             desiredIncline.collectLatest { target ->
                 if (target == null) return@collectLatest
@@ -201,7 +183,7 @@ class FTMSProtocol : ITreadmillProtocol {
 
         delay(startCountdownMs)
 
-        if (abs(target - 1.0) > 0.1 && target > 0.5) {
+        if (abs(target - 1.0) > 0.05 && target > 0.5) {
             sendSpeedRaw(target)
             log("после countdown → $target")
         }
@@ -228,6 +210,10 @@ class FTMSProtocol : ITreadmillProtocol {
         keepAliveJob = null
     }
 
+    /**
+     * Если speedResolutionKmh > 0 — округляем вниз до кратной величины.
+     * Если 0.0 — возвращаем как есть (belt принимает сотые доли).
+     */
     private fun applySpeedResolution(v: Double): Double {
         if (v <= 0.0) return 0.0
         val res = speedResolutionKmh
