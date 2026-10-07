@@ -54,29 +54,22 @@ class FTMSProtocol : ITreadmillProtocol {
     /** Округлять наклон до целых %. */
     var roundInclineToWhole: Boolean = true
 
-    /** Округлять скорость вниз до целых км/ч (belt не понимает дробные). */
+    /** Округлять скорость вниз до целых км/ч. */
     var speedResolutionKmh: Double = 1.0
 
-    /** Отправлять 0x07 (Start). Belt не поедет из STOP без него. */
+    /** Отправлять 0x07 (Start). */
     var sendStartCommand: Boolean = true
 
     /** Пауза между 0x00 и 0x07 в команде старта (мс). */
     var startPreCommandDelayMs: Long = 150L
 
-    /** Сколько ждать после 0x07, пока belt отсчитает 3-2-1 и выйдет на 1.0 км/ч (мс). */
+    /** Сколько ждать после 0x07, пока belt отсчитает 3-2-1 (мс). */
     var startCountdownMs: Long = 4500L
 
-    /**
-     * Период повторения команды скорости, пока belt едет (сек).
-     *
-     * 0 = ВЫКЛЮЧЕНО. Это значение по умолчанию — belt и без него держит
-     * скорость 30+ секунд, а каждое повторение = писк belt'а.
-     */
+    /** Период повторения скорости (сек). 0 = выключено. */
     var speedKeepAliveSec: Int = 0
 
     private var keepAliveJob: Job? = null
-
-    /** Время последней отправки старта — чтобы не долбить belt повторно. */
     @Volatile private var lastStartSentAt = 0L
 
     private fun log(msg: String) {
@@ -118,7 +111,34 @@ class FTMSProtocol : ITreadmillProtocol {
 
         delay(300)
         requestControl()
+
+        // Пытаемся разбудить belt — некоторые прошивки требуют
+        // последовательности команд перед началом работы.
+        wakeUp()
+
         return controlFound
+    }
+
+    /**
+     * Wake-up burst: пытается разбудить belt из «спящего» режима.
+     * Шлёт: 00 (Request Control) → 01 (Reset) → 00.
+     *
+     * Если belt уже разбужен физической кнопкой — команды просто
+     * игнорируются, вреда нет.
+     */
+    private suspend fun wakeUp() {
+        val uuid = controlPointUuid ?: return
+        val c = conn ?: return
+        try {
+            sendMutex.withLock {
+                c.write(uuid, byteArrayOf(0x00), true); delay(200)
+                c.write(uuid, byteArrayOf(0x01), true); delay(200)
+                c.write(uuid, byteArrayOf(0x00), true)
+            }
+            log("wake-up burst отправлен (00 01 00)")
+        } catch (e: Exception) {
+            Log.w("FTMS", "wake-up failed: ${e.message}")
+        }
     }
 
     private fun startSenders() {
@@ -132,8 +152,6 @@ class FTMSProtocol : ITreadmillProtocol {
                 if (target > 0.5 && wasStopped) {
                     startBeltAndFollowUp(target)
                 } else {
-                    // На ходу: сравниваем с реальной скоростью belt'а.
-                    // Если уже эта скорость — не шлём (belt пищит на каждый пакет).
                     if (abs(_data.value.speedKmh - target) < 0.1) {
                         log("скорость уже $target, пропускаю")
                     } else {
