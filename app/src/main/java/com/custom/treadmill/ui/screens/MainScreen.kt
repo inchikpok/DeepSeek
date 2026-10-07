@@ -49,6 +49,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val scanMode by vm.scanMode.collectAsState()
     val statusMessage by vm.statusMessage.collectAsState()
     val settings by vm.settings.collectAsState()
+    val paused by vm.isPaused.collectAsState()
 
     // Готовность дорожки
     val treadmillReady = treadmillState == BleConnectionState.READY
@@ -204,14 +205,37 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
 
                 Spacer(Modifier.height(6.dp))
 
-                // ---------- Старт / Стоп ----------
+                // ---------- Старт / Пауза / Стоп ----------
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(
                         onClick = { vm.startTreadmill() },
-                        enabled = treadmillReady,
+                        enabled = treadmillReady && !paused,
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(vertical = 10.dp)
-                    ) { Text("Старт", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                    ) {
+                        Text("Старт", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Button(
+                        onClick = { vm.togglePauseTreadmill() },
+                        enabled = treadmillReady,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 10.dp),
+                        colors = if (paused)
+                            ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                        else
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                    ) {
+                        Text(
+                            if (paused) "Продолжить" else "Пауза",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
                     Button(
                         onClick = { vm.stopTreadmill() },
                         enabled = treadmillReady,
@@ -221,7 +245,9 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    ) { Text("Стоп", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                    ) {
+                        Text("Стоп", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
 
                 Spacer(Modifier.height(6.dp))
