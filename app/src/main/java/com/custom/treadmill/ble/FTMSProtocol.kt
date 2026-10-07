@@ -6,11 +6,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -33,20 +33,28 @@ class FTMSProtocol : ITreadmillProtocol {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val sendMutex = Mutex()
+
+    /** Колбэк для отправки сообщений в Debug-экран приложения. */
+    var onLog: ((String) -> Unit)? = null
+
+    /**
+     * Поток команд скорости. Используем SharedFlow, а не StateFlow,
+     * чтобы повторная команда с тем же значением всё равно обрабатывалась
+     * (например, повторный «Старт» на той же скорости).
+     */
+    private val speedCommands = MutableSharedFlow<Double>(
+        replay = 0, extraBufferCapacity = 1,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+    )
     private val desiredSpeed = MutableStateFlow<Double?>(null)
     private val desiredIncline = MutableStateFlow<Double?>(null)
+
     private var lastSentSpeed = -1.0
     private var lastSentIncline = -1.0
     private var sendersStarted = false
 
-    /** Задержка после последнего нажатия перед отправкой (мс). */
+    /** Задержка после последнего нажатия (мс). */
     var debounceMs: Long = 350L
-
-    /** Сколько ждать подтверждения между попытками (мс). */
-    var confirmTimeoutMs: Long = 900L
-
-    /** Максимум попыток. */
-    var maxAttempts: Int = 2
 
     /** Округлять наклон до целых %. */
     var roundInclineToWhole: Boolean = true
@@ -57,13 +65,24 @@ class FTMSProtocol : ITreadmillProtocol {
     /** Отправлять 0x07 (Start). Belt не поедет из STOP без него. */
     var sendStartCommand: Boolean = true
 
-    /**
-     * Период повторения команды скорости, пока belt едет (сек).
-     * Belt держит скорость ~20 сек, потом сам возвращается на 1.00.
-     */
+    /** Пауза между 0x00 и 0x07 в команде старта (мс). */
+    var startPreCommandDelayMs: Long = 150L
+
+    /** Сколько ждать после 0x07, пока belt отсчитает 3-2-1 и выйдет на 1.0 км/ч (мс). */
+    var startCountdownMs: Long = 4500L
+
+    /** Период повторения команды скорости, пока belt едет (сек). */
     var speedKeepAliveSec: Int = 10
 
     private var keepAliveJob: Job? = null
+
+    /** Время последней отправки старта — чтобы не долбить belt повторно. */
+    @Volatile private var lastStartSentAt = 0L
+
+    private fun log(msg: String) {
+        Log.d("FTMS", msg)
+        onLog?.invoke("FTMS: $msg")
+    }
 
     override suspend fun initialize(conn: BleConnection): Boolean {
         this.conn = conn
@@ -90,6 +109,7 @@ class FTMSProtocol : ITreadmillProtocol {
 
         lastSentSpeed = -1.0
         lastSentIncline = -1.0
+        lastStartSentAt = 0L
 
         if (!sendersStarted) {
             sendersStarted = true
@@ -104,31 +124,20 @@ class FTMSProtocol : ITreadmillProtocol {
     private fun startSenders() {
         // ---------- Отправитель СКОРОСТИ ----------
         scope.launch {
-            desiredSpeed.filterNotNull().collectLatest { target ->
-                if (abs(target - lastSentSpeed) < 0.01) return@collectLatest
+            speedCommands.collectLatest { target ->
                 delay(debounceMs)
 
-                // "belt был остановлен" — это когда _data показывает 0 и НЕ
-                // (lastSentSpeed был > 0.5 и мы его только что задали).
-                // Проще: смотрим текущую реальную скорость belt'а.
                 val wasStopped = _data.value.speedKmh < 0.5
 
-                var confirmed = false
-                for (attempt in 1..maxAttempts) {
-                    sendMutex.withLock { sendSpeedNow(target, wasStopped) }
+                if (target > 0.5 && wasStopped) {
+                    // Belt стоит. Нужна команда 00 + 07. После countdown
+                    // belt сам стартует на 1.00, потом доведём до target.
+                    startBeltAndFollowUp(target)
+                } else {
+                    // Belt едет — просто меняем целевую.
+                    sendSpeedRaw(target)
                     lastSentSpeed = target
-                    delay(confirmTimeoutMs)
-                    if (abs(_data.value.speedKmh - target) < 0.6 ||
-                        (target == 0.0 && _data.value.speedKmh < 0.2)
-                    ) {
-                        confirmed = true
-                        break
-                    }
-                    Log.w("FTMS", "Speed $target не подтверждена (попытка $attempt)")
                 }
-                Log.d("FTMS", if (confirmed)
-                    "OK speed $target км/ч"
-                else "FAIL speed $target после $maxAttempts попыток")
 
                 if (target > 0.5) startKeepAlive(target) else stopKeepAlive()
             }
@@ -136,35 +145,60 @@ class FTMSProtocol : ITreadmillProtocol {
 
         // ---------- Отправитель НАКЛОНА ----------
         scope.launch {
-            desiredIncline.filterNotNull().collectLatest { target ->
+            desiredIncline.collectLatest { target ->
+                if (target == null) return@collectLatest
                 if (abs(target - lastSentIncline) < 0.01) return@collectLatest
                 delay(debounceMs)
-
-                var confirmed = false
-                for (attempt in 1..maxAttempts) {
-                    sendMutex.withLock { sendInclineNow(target) }
-                    lastSentIncline = target
-                    delay(confirmTimeoutMs)
-                    if (abs(_data.value.inclinePercent - target) < 0.6) {
-                        confirmed = true
-                        break
-                    }
-                    Log.w("FTMS", "Incline $target% не подтверждён (попытка $attempt)")
-                }
-                Log.d("FTMS", if (confirmed)
-                    "OK incline $target%"
-                else "FAIL incline $target% после $maxAttempts попыток")
+                sendInclineRaw(target)
+                lastSentIncline = target
+                log("incline $target%")
             }
         }
     }
 
     /**
-     * Keep-alive: пока belt РЕАЛЬНО едет, повторяем 02 XX XX
-     * каждые speedKeepAliveSec секунд. Belt держит скорость ~20 сек,
-     * потом сам возвращается на 1.00.
+     * Старт belt: 00 (Request Control) + пауза + 07 (Start).
+     * Belt уходит в countdown ~4 сек, потом стартует на 1.00 км/ч.
+     * После этого (если target ≠ 1.0) доводим скорость до target.
      *
-     * ВАЖНО: не работает, если belt реально стоит — иначе мы будем слать
-     * команды скорости и мешать старту.
+     * Защита: если старт был меньше 6 секунд назад — не повторяем,
+     * иначе belt снова уйдёт в countdown.
+     */
+    private suspend fun startBeltAndFollowUp(target: Double) {
+        val uuid = controlPointUuid ?: return
+        val c = conn ?: return
+
+        val now = System.currentTimeMillis()
+        val recentStart = now - lastStartSentAt < 6000L
+
+        if (!recentStart) {
+            lastStartSentAt = now
+            sendMutex.withLock {
+                c.write(uuid, byteArrayOf(0x00), true)
+                delay(startPreCommandDelayMs)
+                if (sendStartCommand) {
+                    c.write(uuid, byteArrayOf(0x07), true)
+                }
+            }
+            log("старт (00+07), belt уйдёт в countdown")
+        } else {
+            log("старт уже идёт, пропускаю повторный 07")
+        }
+
+        // Belt сам стартует на 1.0 через ~4 сек. Ждём.
+        delay(startCountdownMs)
+
+        // Теперь belt на 1.0. Если target отличается — шлём 02 XX XX.
+        if (abs(target - 1.0) > 0.1 && target > 0.5) {
+            sendSpeedRaw(target)
+            log("после countdown → $target")
+        }
+        lastSentSpeed = target
+    }
+
+    /**
+     * Keep-alive: пока belt едет — повторяем 02 XX XX каждые
+     * speedKeepAliveSec секунд. Belt держит ~20 сек, повторение обманывает watchdog.
      */
     private fun startKeepAlive(target: Double) {
         stopKeepAlive()
@@ -173,18 +207,9 @@ class FTMSProtocol : ITreadmillProtocol {
                 delay(speedKeepAliveSec.coerceAtLeast(3) * 1000L)
                 val current = desiredSpeed.value ?: return@launch
                 if (current <= 0.5) return@launch
-                // Дополнительная защита: если belt реально стоит — не шлём
-                if (_data.value.speedKmh < 0.5) {
-                    Log.d("FTMS", "keep-alive пропущен (belt стоит)")
-                    continue
-                }
-                val raw = (current * 100.0).roundToInt().coerceIn(0, 65535)
-                val uuid = controlPointUuid ?: return@launch
-                val c = conn ?: return@launch
-                sendMutex.withLock {
-                    c.write(uuid, byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
-                }
-                Log.d("FTMS", "keep-alive speed $current")
+                if (_data.value.speedKmh < 0.5) continue
+                sendSpeedRaw(current)
+                log("keep-alive $current")
             }
         }
     }
@@ -202,39 +227,32 @@ class FTMSProtocol : ITreadmillProtocol {
         return floored.coerceAtLeast(res)
     }
 
-    /**
-     * Команда скорости. Два режима:
-     *
-     *   beltWasStopped = true  →  02 XX XX  07
-     *     Старт с нуля. 00 убран — он тут ломает последовательность
-     *     (в логе 20:35:52 видно, что "00 02 XX 07" belt не поднимает).
-     *
-     *   beltWasStopped = false →  02 XX XX
-     *     Belt едет — просто меняем целевую.
-     */
-    private suspend fun sendSpeedNow(speedKmh: Double, beltWasStopped: Boolean) {
+    /** Отправка скорости: только 02 XX XX. */
+    private suspend fun sendSpeedRaw(speedKmh: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
         val raw = (speedKmh * 100.0).roundToInt().coerceIn(0, 65535)
-        val cmd = byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
-
-        if (beltWasStopped && speedKmh > 0.0 && sendStartCommand) {
-            c.write(uuid, cmd, true); delay(200)
-            c.write(uuid, byteArrayOf(0x07), true)
-            Log.d("FTMS", "-> speed $speedKmh [start 02+07]")
-        } else {
-            c.write(uuid, cmd, true)
-            Log.d("FTMS", "-> speed $speedKmh [run 02]")
+        sendMutex.withLock {
+            c.write(
+                uuid,
+                byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()),
+                true
+            )
         }
     }
 
-    private suspend fun sendInclineNow(percent: Double) {
+    /** Отправка наклона: 03 XX XX (всегда одним write). */
+    private suspend fun sendInclineRaw(percent: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
         val raw = (percent * 10.0).roundToInt().coerceIn(0, 32767)
-        val cmd = byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
-        c.write(uuid, cmd, true)
-        Log.d("FTMS", "-> incline $percent%")
+        sendMutex.withLock {
+            c.write(
+                uuid,
+                byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()),
+                true
+            )
+        }
     }
 
     override suspend fun requestControl(): Boolean {
@@ -243,56 +261,30 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     override suspend fun start(): Boolean {
-        val uuid = controlPointUuid ?: return false
-        val c = conn ?: return false
-        val s = desiredSpeed.value ?: 1.0
-        val speed = applySpeedResolution(s.coerceAtLeast(1.0))
-        val raw = (speed * 100.0).roundToInt().coerceIn(100, 65535)
-
-        sendMutex.withLock {
-            c.write(uuid,
-                byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()),
-                true
-            )
-            delay(200)
-            if (sendStartCommand) {
-                c.write(uuid, byteArrayOf(0x07), true)
-            }
-        }
-
-        lastSentSpeed = speed
-        desiredSpeed.value = speed
-        Log.d("FTMS", "-> start (speed=$speed)")
-        // Keep-alive включим после того, как belt реально поедет —
-        // через пару секунд он получит первую нотификацию с speed>0.
-        scope.launch {
-            delay(2500)
-            if (_data.value.speedKmh > 0.5) startKeepAlive(speed)
-        }
+        val target = applySpeedResolution((desiredSpeed.value ?: 1.0).coerceAtLeast(1.0))
+        desiredSpeed.value = target
+        // Всегда эмитим — даже если target не изменился
+        speedCommands.tryEmit(target)
         return true
     }
 
     override suspend fun stop(): Boolean {
         val uuid = controlPointUuid ?: return false
-        val c = conn ?: return false
-
         stopKeepAlive()
-
+        lastStartSentAt = 0L
         sendMutex.withLock {
-            c.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
+            conn?.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
         }
         lastSentSpeed = 0.0
         desiredSpeed.value = 0.0
-
-        delay(700)
-        val confirmed = _data.value.speedKmh < 0.2
-        Log.d("FTMS", if (confirmed) "OK stop [02 00 00]" else "FAIL stop")
-        return confirmed
+        log("стоп (02 00 00)")
+        return true
     }
 
     override suspend fun setSpeed(speedKmh: Double): Boolean {
         val v = applySpeedResolution(speedKmh.coerceAtLeast(0.0))
         desiredSpeed.value = v
+        speedCommands.tryEmit(v)
         return true
     }
 
