@@ -18,8 +18,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -62,6 +66,7 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     val treadmillState by vm.treadmillState.collectAsState()
     val treadmillName by vm.treadmillName.collectAsState()
     val settings by vm.settings.collectAsState()
+    val data by vm.treadmillData.collectAsState()
 
     val treadmillReady = treadmillState == BleConnectionState.READY
 
@@ -146,6 +151,10 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                     Text("Дорожка: ${treadmillName ?: "—"}", fontSize = 12.sp)
                     Text("Состояние: $treadmillState", fontSize = 12.sp)
                     Text("Протокол: ${settings.protocol}", fontSize = 12.sp)
+                    Text(
+                        "Текущая скорость: %.1f км/ч".format(data.speedKmh),
+                        fontSize = 12.sp
+                    )
                     Text("Записей в логе: ${logs.size}", fontSize = 12.sp)
                 }
             }
@@ -202,8 +211,11 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                 0 -> LogView(logs, listState, Modifier.weight(1f))
                 1 -> CommandReference(
                     treadmillReady = treadmillReady,
+                    currentSpeedKmh = data.speedKmh,
                     onSend = { vm.sendRawHex(it) },
                     onStartBelt = { vm.startTreadmill() },
+                    onSpeedPlus = { vm.setSpeed(data.speedKmh + 1.0) },
+                    onSpeedMinus = { vm.setSpeed((data.speedKmh - 1.0).coerceAtLeast(1.0)) },
                     modifier = Modifier.weight(1f)
                 )
                 else -> CommandConstructor(
@@ -278,12 +290,6 @@ private data class CmdEntry(
     val note: String = ""
 )
 
-/**
- * Справочник проверенных команд для FS-E629DD.
- *
- * «Старт с нуля» здесь НЕТ намеренно — belt требует раздельные write
- * (00, пауза, 07, пауза 4 сек), это делается кнопкой «Запустить belt».
- */
 private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
     val speedsKmh = listOf(1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20)
 
@@ -321,8 +327,11 @@ private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
 @Composable
 private fun CommandReference(
     treadmillReady: Boolean,
+    currentSpeedKmh: Double,
     onSend: (String) -> Unit,
     onStartBelt: () -> Unit,
+    onSpeedPlus: () -> Unit,
+    onSpeedMinus: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val groups = remember { buildCommandReference() }
@@ -350,7 +359,7 @@ private fun CommandReference(
             }
         }
 
-        // Кнопка запуска belt в самом верху
+        // ---------- Запуск + быстрая регулировка скорости ----------
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -370,6 +379,43 @@ private fun CommandReference(
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Запустить belt")
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Быстрая регулировка (belt едет)",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "От текущей скорости: %.1f км/ч".format(currentSpeedKmh),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onSpeedMinus,
+                            enabled = treadmillReady && currentSpeedKmh > 1.0,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("1 км/ч", fontSize = 13.sp)
+                        }
+                        Button(
+                            onClick = onSpeedPlus,
+                            enabled = treadmillReady && currentSpeedKmh > 0.5,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("1 км/ч", fontSize = 13.sp)
+                        }
                     }
                 }
             }
@@ -457,7 +503,9 @@ private fun CommandConstructor(
     val incline = inclineStr.replace(',', '.').toDoubleOrNull() ?: 0.0
 
     Column(
-        modifier.fillMaxWidth(),
+        modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (!treadmillReady) {
@@ -606,6 +654,8 @@ private fun CommandConstructor(
                 )
             }
         }
+
+        Spacer(Modifier.height(12.dp))
     }
 }
 
