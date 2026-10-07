@@ -21,7 +21,7 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
 
     val minSpeedKmh: Double = 1.0,
-    val maxSpeedKmh: Double = 20.0,          // ← было 12, дорожка тянет 20
+    val maxSpeedKmh: Double = 20.0,
     val maxInclinePercent: Double = 15.0,
     val inclineStep: Double = 1.0,
     val hrEnabled: Boolean = false,
@@ -34,13 +34,13 @@ data class AppSettings(
     val intervalSec: Int = 30,
     val stepKmh: Double = 0.5,
 
+    /** Шаг кнопок +/− скорости на главном и на экране тренировки. */
+    val speedStepKmh: Double = 0.5,
+
     /** Отправлять 0x07 в start(). */
     val sendStartCommand: Boolean = true,
 
-    /**
-     * Период повторения скорости (сек). 0 = выключено.
-     * Belt держит скорость сам — включение вызывает писк.
-     */
+    /** Повтор скорости (сек). 0 = выключено. */
     val speedKeepAliveSec: Int = 0
 )
 
