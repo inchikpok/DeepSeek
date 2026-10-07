@@ -171,8 +171,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val p: ITreadmillProtocol = when (s.protocol) {
                 ProtocolType.FTMS -> FTMSProtocol().apply {
                     sendStartCommand = s.sendStartCommand
-                    requestControlBeforeEachCommand = s.requestControlBeforeEachCommand
-                    sendStartAfterSpeedChange = s.sendStartAfterSpeedChange
+                    speedKeepAliveSec = s.speedKeepAliveSec
                 }
                 ProtocolType.FITSHOW -> FitShowProprietaryProtocol(
                     manualWriteUuid = s.manualWriteUuid.takeIf { it.isNotBlank() }?.toUuidSafe(),
@@ -182,14 +181,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             protocol = p
             addLog("Протокол: ${p.protocolName}")
 
-            // Живое обновление тумблеров без переподключения
+            // Живое обновление настроек протокола без переподключения
             settingsCollectorJob?.cancel()
             settingsCollectorJob = viewModelScope.launch {
                 settingsStore.settings.collect { newS ->
                     (p as? FTMSProtocol)?.apply {
                         sendStartCommand = newS.sendStartCommand
-                        requestControlBeforeEachCommand = newS.requestControlBeforeEachCommand
-                        sendStartAfterSpeedChange = newS.sendStartAfterSpeedChange
+                        speedKeepAliveSec = newS.speedKeepAliveSec
                     }
                 }
             }
