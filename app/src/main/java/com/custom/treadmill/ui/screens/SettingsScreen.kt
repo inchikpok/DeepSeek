@@ -134,52 +134,11 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(6.dp))
 
-                    // 0x00 перед каждой командой
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Request Control (0x00) перед командой", fontSize = 14.sp)
+                            Text("Команда Start (0x07)", fontSize = 14.sp)
                             Text(
-                                "Belt принимает его в логе — по умолчанию вкл.",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = settings.requestControlBeforeEachCommand,
-                            onCheckedChange = { v ->
-                                vm.updateSettings { it.copy(requestControlBeforeEachCommand = v) }
-                            }
-                        )
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-
-                    // 0x07 после смены скорости
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Start (0x07) после смены скорости", fontSize = 14.sp)
-                            Text(
-                                "КЛЮЧЕВОЕ: без 0x07 belt игнорирует +/− скорости.",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = settings.sendStartAfterSpeedChange,
-                            onCheckedChange = { v ->
-                                vm.updateSettings { it.copy(sendStartAfterSpeedChange = v) }
-                            }
-                        )
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-
-                    // 0x07 в start()
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Start (0x07) в методе Старт", fontSize = 14.sp)
-                            Text(
-                                "Выключать не рекомендуется.",
+                                "Нужна, чтобы belt тронулся с нуля.",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -191,6 +150,24 @@ fun SettingsScreen(
                             }
                         )
                     }
+
+                    Spacer(Modifier.height(6.dp))
+
+                    OutlinedTextField(
+                        value = settings.speedKeepAliveSec.toString(),
+                        onValueChange = { v ->
+                            val i = v.toIntOrNull() ?: return@OutlinedTextField
+                            vm.updateSettings { it.copy(speedKeepAliveSec = i) }
+                        },
+                        label = { Text("Повтор команды скорости, сек") },
+                        supportingText = {
+                            Text(
+                                "Belt держит скорость ~20 сек. Раз в 10 сек — безопасно.",
+                                fontSize = 10.sp
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
