@@ -308,6 +308,7 @@ private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
     return listOf(
         "Управление" to listOf(
             CmdEntry("Request Control", "00", "Запросить контроль"),
+            CmdEntry("Reset", "01", "Стандартный FTMS Reset (wake-up)"),
             CmdEntry("Start / Resume", "07", "Только ПОСЛЕ 00 + паузы"),
             CmdEntry("Stop (наш способ)", "02 00 00", "Скорость → 0"),
             CmdEntry("Pause (стандарт FTMS)", "08 01", "На этом belt игнорируется")
