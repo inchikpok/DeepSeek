@@ -82,6 +82,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
+    /** Пауза ручного управления: belt стоит, скорость запомнена. */
+    private val _isPaused = MutableStateFlow(false)
+    val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
+    private var speedBeforePause: Double = 0.0
+
     private val workoutManager = WorkoutManager()
     val workoutState = workoutManager.state
 
@@ -210,6 +215,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _targetSpeed.value = 0.0
         _targetIncline.value = 0.0
         _treadmillName.value = null
+        _isPaused.value = false
     }
 
     fun connectHeartRate(device: BluetoothDevice) {
@@ -269,16 +275,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { protocol?.setIncline(safe) }
     }
 
+    /**
+     * Старт вручную (с главного экрана).
+     * Если стояли на паузе — восстановит запомненную скорость.
+     */
     fun startTreadmill() {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Сначала подключите дорожку"
             return
         }
-        viewModelScope.launch { protocol?.start() }
+        val restore = if (_isPaused.value && speedBeforePause > 0.5) speedBeforePause else null
+        _isPaused.value = false
+
+        viewModelScope.launch {
+            if (restore != null && restore > 1.0) {
+                protocol?.setSpeed(restore)
+            } else {
+                protocol?.setSpeed(1.0)
+            }
+            protocol?.start()
+        }
+    }
+
+    /**
+     * Пауза (с главного экрана). Запоминает текущую целевую скорость,
+     * останавливает belt. Восстанавливается через startTreadmill().
+     */
+    fun pauseTreadmill() {
+        if (!isTreadmillReady()) return
+        if (_isPaused.value) return
+        speedBeforePause = _targetSpeed.value.coerceAtLeast(1.0)
+        _isPaused.value = true
+        viewModelScope.launch { protocol?.stop() }
+        _statusMessage.value = "Пауза (скорость ${speedBeforePause} сохранена)"
+    }
+
+    /** Тумблер для UI: на паузе → запускаем, едет → пауза. */
+    fun togglePauseTreadmill() {
+        if (_isPaused.value) startTreadmill() else pauseTreadmill()
     }
 
     fun stopTreadmill() {
         if (!isTreadmillReady()) return
+        _isPaused.value = false
+        speedBeforePause = 0.0
         viewModelScope.launch { protocol?.stop() }
     }
 
@@ -287,6 +327,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _statusMessage.value = "Дорожка не подключена"
             return
         }
+        _isPaused.value = false
+        speedBeforePause = 0.0
         viewModelScope.launch {
             if (workoutManager.state.value.running && !workoutManager.state.value.paused) {
                 workoutManager.pause()
@@ -344,11 +386,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         resetStats()
         resetHrHistory()
         workoutLogSaved = false
+        _isPaused.value = false
 
         viewModelScope.launch {
-            // Belt стартует через countdown ~4 сек и выходит на 1.0.
             protocol?.start()
-            // Ждём countdown + запас
             delay(5500)
             workoutManager.start(
                 scope = viewModelScope, program = program,
@@ -375,7 +416,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             protocol?.start()
-            // Ждём countdown
             delay(5500)
             workoutManager.resume()
         }
