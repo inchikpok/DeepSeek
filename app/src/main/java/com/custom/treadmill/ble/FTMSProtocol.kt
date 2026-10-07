@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.roundToInt
 import java.util.UUID
 
@@ -55,22 +56,25 @@ class FTMSProtocol : ITreadmillProtocol {
     /** Отправлять 0x07 (Start/Resume) в методе start(). */
     var sendStartCommand: Boolean = true
 
-    /**
-     * Отправлять 0x00 (Request Control) перед каждой командой скорости/наклона.
-     * В логе belt его спокойно принимает — по умолчанию ВКЛ.
-     */
+    /** Отправлять 0x00 (Request Control) перед каждой командой скорости/наклона. */
     var requestControlBeforeEachCommand: Boolean = true
 
     /**
      * Отправлять 0x07 (Start/Resume) ПОСЛЕ каждой команды скорости.
-     *
-     * КЛЮЧЕВОЕ: судя по логу, этот belt не применяет новую скорость, пока
-     * не получит 0x07. Тот же приём уже используется в start() — поэтому
-     * дорожка реагирует на «Старт», но игнорирует кнопки +/− скорости.
-     *
-     * По умолчанию ВКЛ.
+     * Этот belt применяет новую скорость только после 0x07.
      */
     var sendStartAfterSpeedChange: Boolean = true
+
+    /**
+     * Разрешение скорости в км/ч.
+     *
+     * Belt FS-E629DD (UNixFit-990x) принимает ТОЛЬКО целые км/ч:
+     * 1.00 — ок, 4.00 — ок, 1.50 — игнор, 2.50 — игнор.
+     *
+     * Поэтому здесь floor до 1.0. Если решите протестировать 0.5 —
+     * выключите (поставьте 0.0), но, скорее всего, не сработает.
+     */
+    var speedResolutionKmh: Double = 1.0
 
     override suspend fun initialize(conn: BleConnection): Boolean {
         this.conn = conn
@@ -159,10 +163,21 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     /**
-     * Команда скорости. Формат, который реально понимает этот belt:
-     *   0x00           — Request Control (опционально)
-     *   0x02 XX XX     — Set Target Speed, XX XX = км/ч × 100
-     *   0x07           — Start/Resume: belt ПРИМЕНЯЕТ скорость только после этого
+     * Округляет скорость вниз до кратной speedResolutionKmh (при 1.0 — до целых).
+     * 0.0 остаётся 0.0. Ненулевые значения не опускаются ниже speedResolutionKmh.
+     */
+    private fun applySpeedResolution(v: Double): Double {
+        if (v <= 0.0) return 0.0
+        val res = speedResolutionKmh
+        if (res <= 0.0) return v
+        val floored = floor(v / res) * res
+        return floored.coerceAtLeast(res)
+    }
+
+    /**
+     * 0x00           — Request Control (опционально)
+     * 0x02 XX XX     — Set Target Speed (XX XX = км/ч × 100)
+     * 0x07           — Start/Resume: belt ПРИМЕНЯЕТ скорость только после этого
      */
     private suspend fun sendSpeedNow(speedKmh: Double) {
         val uuid = controlPointUuid ?: return
@@ -176,7 +191,6 @@ class FTMSProtocol : ITreadmillProtocol {
         }
         c.write(uuid, cmd, true)
 
-        // Ключевой момент: без 0x07 belt НЕ применяет новую скорость.
         if (sendStartAfterSpeedChange && speedKmh > 0.0) {
             delay(150)
             c.write(uuid, byteArrayOf(0x07), true)
@@ -190,10 +204,6 @@ class FTMSProtocol : ITreadmillProtocol {
         )
     }
 
-    /**
-     * Команда наклона. Belt принимает 0x03 XX XX сам по себе — 0x07 не нужен.
-     * XX XX = % × 10.
-     */
     private suspend fun sendInclineNow(percent: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
@@ -213,16 +223,11 @@ class FTMSProtocol : ITreadmillProtocol {
         return conn?.write(uuid, byteArrayOf(0x00), true) ?: false
     }
 
-    /**
-     * Запуск дорожки. Тот же паттерн, что и у скорости:
-     *   0x00 → 0x02 XX XX → 0x07
-     * Минимальная скорость — 1.0 км/ч (belt не любит 0.5).
-     */
     override suspend fun start(): Boolean {
         val uuid = controlPointUuid ?: return false
         val c = conn ?: return false
         val s = desiredSpeed.value ?: 1.0
-        val speed = s.coerceAtLeast(1.0)
+        val speed = applySpeedResolution(s.coerceAtLeast(1.0))
         val raw = (speed * 100.0).roundToInt().coerceIn(100, 65535)
 
         sendMutex.withLock {
@@ -245,10 +250,6 @@ class FTMSProtocol : ITreadmillProtocol {
         return true
     }
 
-    /**
-     * Стоп. Сначала 02 00 00 (belt реагирует именно на это).
-     * Если через 900 мс скорость не упала — вторая попытка через 08 01.
-     */
     override suspend fun stop(): Boolean {
         val uuid = controlPointUuid ?: return false
         val c = conn ?: return false
@@ -278,7 +279,9 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     override suspend fun setSpeed(speedKmh: Double): Boolean {
-        desiredSpeed.value = speedKmh.coerceAtLeast(0.0)
+        // Округляем вниз до целых — belt не понимает дробные значения.
+        val v = applySpeedResolution(speedKmh.coerceAtLeast(0.0))
+        desiredSpeed.value = v
         return true
     }
 
