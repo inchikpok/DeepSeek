@@ -37,11 +37,6 @@ class FTMSProtocol : ITreadmillProtocol {
     /** Колбэк для отправки сообщений в Debug-экран приложения. */
     var onLog: ((String) -> Unit)? = null
 
-    /**
-     * Поток команд скорости. Используем SharedFlow, а не StateFlow,
-     * чтобы повторная команда с тем же значением всё равно обрабатывалась
-     * (например, повторный «Старт» на той же скорости).
-     */
     private val speedCommands = MutableSharedFlow<Double>(
         replay = 0, extraBufferCapacity = 1,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
@@ -71,8 +66,13 @@ class FTMSProtocol : ITreadmillProtocol {
     /** Сколько ждать после 0x07, пока belt отсчитает 3-2-1 и выйдет на 1.0 км/ч (мс). */
     var startCountdownMs: Long = 4500L
 
-    /** Период повторения команды скорости, пока belt едет (сек). */
-    var speedKeepAliveSec: Int = 10
+    /**
+     * Период повторения команды скорости, пока belt едет (сек).
+     *
+     * 0 = ВЫКЛЮЧЕНО. Это значение по умолчанию — belt и без него держит
+     * скорость 30+ секунд, а каждое повторение = писк belt'а.
+     */
+    var speedKeepAliveSec: Int = 0
 
     private var keepAliveJob: Job? = null
 
@@ -130,16 +130,20 @@ class FTMSProtocol : ITreadmillProtocol {
                 val wasStopped = _data.value.speedKmh < 0.5
 
                 if (target > 0.5 && wasStopped) {
-                    // Belt стоит. Нужна команда 00 + 07. После countdown
-                    // belt сам стартует на 1.00, потом доведём до target.
                     startBeltAndFollowUp(target)
                 } else {
-                    // Belt едет — просто меняем целевую.
-                    sendSpeedRaw(target)
+                    // На ходу: сравниваем с реальной скоростью belt'а.
+                    // Если уже эта скорость — не шлём (belt пищит на каждый пакет).
+                    if (abs(_data.value.speedKmh - target) < 0.1) {
+                        log("скорость уже $target, пропускаю")
+                    } else {
+                        sendSpeedRaw(target)
+                        log("скорость $target")
+                    }
                     lastSentSpeed = target
                 }
 
-                if (target > 0.5) startKeepAlive(target) else stopKeepAlive()
+                if (target > 0.5 && speedKeepAliveSec > 0) startKeepAlive(target) else stopKeepAlive()
             }
         }
 
@@ -151,19 +155,11 @@ class FTMSProtocol : ITreadmillProtocol {
                 delay(debounceMs)
                 sendInclineRaw(target)
                 lastSentIncline = target
-                log("incline $target%")
+                log("наклон $target%")
             }
         }
     }
 
-    /**
-     * Старт belt: 00 (Request Control) + пауза + 07 (Start).
-     * Belt уходит в countdown ~4 сек, потом стартует на 1.00 км/ч.
-     * После этого (если target ≠ 1.0) доводим скорость до target.
-     *
-     * Защита: если старт был меньше 6 секунд назад — не повторяем,
-     * иначе belt снова уйдёт в countdown.
-     */
     private suspend fun startBeltAndFollowUp(target: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
@@ -185,10 +181,8 @@ class FTMSProtocol : ITreadmillProtocol {
             log("старт уже идёт, пропускаю повторный 07")
         }
 
-        // Belt сам стартует на 1.0 через ~4 сек. Ждём.
         delay(startCountdownMs)
 
-        // Теперь belt на 1.0. Если target отличается — шлём 02 XX XX.
         if (abs(target - 1.0) > 0.1 && target > 0.5) {
             sendSpeedRaw(target)
             log("после countdown → $target")
@@ -196,15 +190,12 @@ class FTMSProtocol : ITreadmillProtocol {
         lastSentSpeed = target
     }
 
-    /**
-     * Keep-alive: пока belt едет — повторяем 02 XX XX каждые
-     * speedKeepAliveSec секунд. Belt держит ~20 сек, повторение обманывает watchdog.
-     */
     private fun startKeepAlive(target: Double) {
         stopKeepAlive()
+        if (speedKeepAliveSec <= 0) return
         keepAliveJob = scope.launch {
             while (isActive) {
-                delay(speedKeepAliveSec.coerceAtLeast(3) * 1000L)
+                delay(speedKeepAliveSec * 1000L)
                 val current = desiredSpeed.value ?: return@launch
                 if (current <= 0.5) return@launch
                 if (_data.value.speedKmh < 0.5) continue
@@ -227,7 +218,6 @@ class FTMSProtocol : ITreadmillProtocol {
         return floored.coerceAtLeast(res)
     }
 
-    /** Отправка скорости: только 02 XX XX. */
     private suspend fun sendSpeedRaw(speedKmh: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
@@ -241,7 +231,6 @@ class FTMSProtocol : ITreadmillProtocol {
         }
     }
 
-    /** Отправка наклона: 03 XX XX (всегда одним write). */
     private suspend fun sendInclineRaw(percent: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
@@ -263,7 +252,6 @@ class FTMSProtocol : ITreadmillProtocol {
     override suspend fun start(): Boolean {
         val target = applySpeedResolution((desiredSpeed.value ?: 1.0).coerceAtLeast(1.0))
         desiredSpeed.value = target
-        // Всегда эмитим — даже если target не изменился
         speedCommands.tryEmit(target)
         return true
     }
