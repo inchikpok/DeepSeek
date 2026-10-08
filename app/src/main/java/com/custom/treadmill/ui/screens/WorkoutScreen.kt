@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.sp
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.ui.components.HeartRateChart
-import com.custom.treadmill.ui.components.RollingText
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -32,7 +31,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
     val settings by vm.settings.collectAsState()
     val treadmillState by vm.treadmillState.collectAsState()
 
-    // Свои метрики тренировки
     val elapsedSec by vm.uiElapsedSec.collectAsState()
     val distanceKm by vm.uiDistanceKm.collectAsState()
     val calories by vm.uiCalories.collectAsState()
@@ -118,7 +116,7 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                             }
                         }
                         val remainSec = (ws.segmentDurationSec - ws.segmentElapsedSec).coerceAtLeast(0)
-                        RollingText(
+                        Text(
                             text = formatTime(remainSec),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -176,7 +174,7 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f)
                         )
-                        RollingText(
+                        Text(
                             text = if (hr > 0) "$hr" else "—",
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
@@ -287,7 +285,7 @@ private fun MiniControl(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.Center
             ) {
-                RollingText(
+                Text(
                     text = value,
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
@@ -343,7 +341,7 @@ private fun WorkoutMetric(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.Center
         ) {
-            RollingText(
+            Text(
                 text = value,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
