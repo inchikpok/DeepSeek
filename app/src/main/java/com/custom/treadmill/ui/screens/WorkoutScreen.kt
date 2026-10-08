@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.ui.components.HeartRateChart
+import com.custom.treadmill.ui.components.RollingText
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -43,6 +45,8 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
     val targetHr = if (settings.hrMode == HrMode.TARGET) settings.targetHr
                    else (settings.zoneMin + settings.zoneMax) / 2
 
+    val isLastSegment = ws.currentSegmentIndex >= ws.totalSegments - 1
+
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier
@@ -51,7 +55,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Заголовок ----------
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -78,7 +81,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Прогресс ----------
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
                     val progress = if (ws.totalSec > 0)
@@ -116,7 +118,7 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                             }
                         }
                         val remainSec = (ws.segmentDurationSec - ws.segmentElapsedSec).coerceAtLeast(0)
-                        Text(
+                        RollingText(
                             text = formatTime(remainSec),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -139,7 +141,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Управление ----------
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 MiniControl(
                     label = "Скорость",
@@ -161,7 +162,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- График пульса ----------
             Card(Modifier.fillMaxWidth().weight(1f)) {
                 Column(Modifier.fillMaxSize().padding(10.dp)) {
                     Row(
@@ -174,7 +174,7 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f)
                         )
-                        Text(
+                        RollingText(
                             text = if (hr > 0) "$hr" else "—",
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
@@ -208,7 +208,6 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Метрики ----------
             Card(Modifier.fillMaxWidth()) {
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 8.dp)
@@ -221,14 +220,15 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Кнопки ----------
+            // ---------- Пауза / Следующий / Стоп ----------
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val paused = ws.paused
+
                 Button(
                     onClick = { vm.togglePauseWorkout() },
                     enabled = treadmillReady || paused,
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 14.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp),
                     colors = if (paused)
                         ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                     else
@@ -239,19 +239,34 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                 ) {
                     Text(
                         if (paused) "Продолжить" else "Пауза",
-                        fontSize = 14.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
+                }
+
+                OutlinedButton(
+                    onClick = { vm.skipWorkoutSegment() },
+                    enabled = treadmillReady && !paused && !isLastSegment,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    Icon(
+                        Icons.Default.SkipNext,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Text("Далее", fontSize = 12.sp)
                 }
 
                 Button(
                     onClick = { vm.stopWorkout(); onBack() },
                     enabled = treadmillReady,
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 14.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
                 ) {
-                    Text("Стоп", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("Стоп", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -285,7 +300,7 @@ private fun MiniControl(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.Center
             ) {
-                Text(
+                RollingText(
                     text = value,
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
@@ -341,7 +356,7 @@ private fun WorkoutMetric(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.Center
         ) {
-            Text(
+            RollingText(
                 text = value,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
