@@ -82,7 +82,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
-    /** Пауза ручного управления: belt стоит, скорость запомнена. */
     private val _isPaused = MutableStateFlow(false)
     val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
     private var speedBeforePause: Double = 0.0
@@ -174,7 +173,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val p: ITreadmillProtocol = when (s.protocol) {
                 ProtocolType.FTMS -> FTMSProtocol().apply {
                     sendStartCommand = s.sendStartCommand
-                    speedKeepAliveSec = s.speedKeepAliveSec
                     onLog = { msg -> addLog(msg) }
                 }
                 ProtocolType.FITSHOW -> FitShowProprietaryProtocol(
@@ -190,7 +188,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 settingsStore.settings.collect { newS ->
                     (p as? FTMSProtocol)?.apply {
                         sendStartCommand = newS.sendStartCommand
-                        speedKeepAliveSec = newS.speedKeepAliveSec
                     }
                 }
             }
@@ -276,12 +273,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Ждёт, пока belt реально поедет с заданной минимальной скоростью.
+     * Возвращает true, если дождались; false — если таймаут.
+     */
+    private suspend fun waitForBeltRunning(
+        minSpeedKmh: Double = 0.9,
+        timeoutMs: Long = 15000L
+    ): Boolean {
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            if (_treadmillData.value.speedKmh >= minSpeedKmh) return true
+            delay(150L)
+        }
+        return false
+    }
+
+    /**
      * Старт вручную (с главного экрана).
      * Если стояли на паузе — восстановит запомненную скорость.
-     *
-     * После запуска проверяем, поехал ли belt. Если нет — belt,
-     * скорее всего, в «спящем» режиме — показываем подсказку про
-     * физическую кнопку.
      */
     fun startTreadmill() {
         if (!isTreadmillReady()) {
@@ -292,27 +301,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _isPaused.value = false
 
         viewModelScope.launch {
-            if (restore != null && restore > 1.0) {
-                protocol?.setSpeed(restore)
-            } else {
-                protocol?.setSpeed(1.0)
-            }
             protocol?.start()
-
-            // Belt должен поехать через ~4-5 сек (countdown 3-2-1).
-            // Если через 6.5 сек всё ещё стоит — belt не отвечает.
-            delay(6500)
-            if (_treadmillData.value.speedKmh < 0.3) {
+            if (!waitForBeltRunning(0.9, 15000L)) {
                 _statusMessage.value =
                     "Дорожка не отвечает. Нажмите любую кнопку на дорожке и попробуйте снова."
+                return@launch
+            }
+            if (restore != null && restore > 1.0) {
+                protocol?.setSpeed(restore)
             }
         }
     }
 
-    /**
-     * Пауза (с главного экрана). Запоминает текущую целевую скорость,
-     * останавливает belt. Восстанавливается через startTreadmill().
-     */
     fun pauseTreadmill() {
         if (!isTreadmillReady()) return
         if (_isPaused.value) return
@@ -322,7 +322,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _statusMessage.value = "Пауза (скорость ${speedBeforePause} сохранена)"
     }
 
-    /** Тумблер для UI: на паузе → запускаем, едет → пауза. */
     fun togglePauseTreadmill() {
         if (_isPaused.value) startTreadmill() else pauseTreadmill()
     }
@@ -402,16 +401,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             protocol?.start()
-            delay(5500)
-
-            // Проверяем, поехал ли belt. Если нет — не запускаем программу,
-            // иначе таймер пойдёт впустую.
-            if (_treadmillData.value.speedKmh < 0.3) {
+            if (!waitForBeltRunning(0.9, 15000L)) {
                 _statusMessage.value =
                     "Дорожка не отвечает. Нажмите любую кнопку на дорожке и запустите снова."
                 return@launch
             }
-
+            // Belt поехал на 1.0. Передаём управление программе.
             workoutManager.start(
                 scope = viewModelScope, program = program,
                 onSetSpeed = { setSpeed(it) },
@@ -437,15 +432,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             protocol?.start()
-            delay(5500)
-
-            // Если belt не ответил (спит) — не продолжаем.
-            if (_treadmillData.value.speedKmh < 0.3) {
+            if (!waitForBeltRunning(0.9, 15000L)) {
                 _statusMessage.value =
                     "Дорожка не отвечает. Нажмите кнопку на дорожке и продолжите снова."
                 return@launch
             }
-
             workoutManager.resume()
         }
     }
@@ -458,15 +449,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Остановить тренировку и belt. Сохранить лог.
+     * Вызывается кнопкой «← Назад» в WorkoutScreen.
+     */
     fun stopWorkout() {
         saveWorkoutLog()
         workoutManager.stop()
+        if (isTreadmillReady()) {
+            viewModelScope.launch { protocol?.stop() }
+        }
     }
 
-    fun resetWorkout() {
-        saveWorkoutLog()
-        workoutManager.stop()
-    }
+    fun resetWorkout() = stopWorkout()
 
     private fun resetStats() {
         hrSum = 0L; hrCount = 0L; hrMax = 0; speedSum = 0.0; speedCount = 0L
