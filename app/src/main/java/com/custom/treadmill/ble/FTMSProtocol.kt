@@ -41,13 +41,8 @@ class FTMSProtocol : ITreadmillProtocol {
 
     var roundInclineToWhole: Boolean = true
 
-    /** Что мы в последний раз просили у belt'а. */
     @Volatile private var lastRequestedSpeed = 0.0
-    @Volatile private var lastRequestedIncline = 0.0
-
-    /** Когда последний раз отправляли. */
     @Volatile private var lastSpeedSentAt = 0L
-    @Volatile private var lastInclineSentAt = 0L
 
     private var retryJob: Job? = null
 
@@ -80,9 +75,7 @@ class FTMSProtocol : ITreadmillProtocol {
         controlPointUuid?.let { conn.setNotify(it, true, indicate = true) }
 
         lastRequestedSpeed = 0.0
-        lastRequestedIncline = 0.0
         lastSpeedSentAt = 0L
-        lastInclineSentAt = 0L
 
         delay(300)
         requestControl()
@@ -108,12 +101,14 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     /**
-     * Retry-цикл: если belt отклонился от целевой скорости или наклона
-     * и с момента последней отправки прошло > 5 сек — повторяем.
+     * Retry ТОЛЬКО для скорости, и только когда belt реально едет.
      *
-     * Это защита от:
-     * • watchdog'а belt'а (belt сам сбрасывает скорость через 20–30 сек);
-     * • потери отдельных команд (belt иногда пропускает первую).
+     * Наклон НЕ повторяем — belt сам применяет команду, а от повторных
+     * 03 XX XX только пищит и раздражает. Именно из-за retry для наклона
+     * писк шёл каждые 5 секунд.
+     *
+     * Retry работает только когда belt движется (speed > 0.5) —
+     * если belt стоит, никаких повторов, чтобы не мешать старту.
      */
     private fun startRetryLoop() {
         if (retryJob?.isActive == true) return
@@ -122,7 +117,9 @@ class FTMSProtocol : ITreadmillProtocol {
                 delay(2500L)
                 val now = System.currentTimeMillis()
 
-                // --- Скорость ---
+                // Belt стоит — не долбим
+                if (_data.value.speedKmh < 0.5) continue
+
                 val speedTarget = lastRequestedSpeed
                 if (speedTarget >= 0.5 && now - lastSpeedSentAt >= 5000L) {
                     val actual = _data.value.speedKmh
@@ -130,17 +127,6 @@ class FTMSProtocol : ITreadmillProtocol {
                         sendSpeedRaw(speedTarget)
                         lastSpeedSentAt = now
                         log("retry speed $speedTarget (belt at $actual)")
-                    }
-                }
-
-                // --- Наклон ---
-                if (now - lastInclineSentAt >= 5000L) {
-                    val incTarget = lastRequestedIncline
-                    val actual = _data.value.inclinePercent
-                    if (abs(actual - incTarget) >= 0.5) {
-                        sendInclineRaw(incTarget)
-                        lastInclineSentAt = now
-                        log("retry incline $incTarget (belt at $actual)")
                     }
                 }
             }
@@ -169,18 +155,20 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     /**
-     * Отправка наклона. Дублируем с паузой 200 мс — belt иногда пропускает
-     * первую команду.
+     * Отправка наклона — ОДНА команда, без дублирования и без retry.
+     * Belt принимает с первого раза (проверено логом).
      */
     private suspend fun sendInclineRaw(percent: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
         val raw = (percent * 10.0).roundToInt().coerceIn(0, 32767)
-        val cmd = byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte())
-
-        sendMutex.withLock { c.write(uuid, cmd, true) }
-        delay(200)
-        sendMutex.withLock { c.write(uuid, cmd, true) }
+        sendMutex.withLock {
+            c.write(
+                uuid,
+                byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()),
+                true
+            )
+        }
     }
 
     override suspend fun requestControl(): Boolean {
@@ -226,8 +214,6 @@ class FTMSProtocol : ITreadmillProtocol {
         val t = if (roundInclineToWhole)
             percent.coerceIn(0.0, 30.0).roundToInt().toDouble()
         else percent.coerceIn(0.0, 30.0)
-        lastRequestedIncline = t
-        lastInclineSentAt = System.currentTimeMillis()
         sendInclineRaw(t)
         log("наклон $t%")
         return true
@@ -251,10 +237,7 @@ class FTMSProtocol : ITreadmillProtocol {
 
     /**
      * Разбор Treadmill Data (0x2ACD).
-     *
-     * ВАЖНО: если флаг incline отсутствует — НЕ сбрасываем incline в 0,
-     * а оставляем последнее известное значение. Belt часто присылает
-     * несколько фреймов без incline, хотя наклон реально установлен.
+     * Incline сохраняем из предыдущего значения, если флаг отсутствует.
      */
     private fun parseTreadmillData(b: ByteArray) {
         if (b.size < 4) return
@@ -264,7 +247,7 @@ class FTMSProtocol : ITreadmillProtocol {
             val prev = _data.value
 
             var speed = prev.speedKmh
-            var incline = prev.inclinePercent      // ← сохраняем, не сбрасываем
+            var incline = prev.inclinePercent
             var distance = prev.distanceKm
             var calories = prev.calories
             var elapsed = prev.elapsedSec
@@ -274,28 +257,28 @@ class FTMSProtocol : ITreadmillProtocol {
                 speed = u16(b, o) / 100.0
                 o += 2
             }
-            if (flags and (1 shl 1) != 0) o += 2  // Average Speed
-            if (flags and (1 shl 2) != 0) {        // Total Distance
+            if (flags and (1 shl 1) != 0) o += 2
+            if (flags and (1 shl 2) != 0) {
                 if (o + 3 <= b.size) distance = u24(b, o) / 1000.0
                 o += 3
             }
-            if (flags and (1 shl 3) != 0) {        // Inclination + Ramp Angle
+            if (flags and (1 shl 3) != 0) {
                 if (o + 4 <= b.size) incline = s16(b, o) / 10.0
                 o += 4
             }
-            if (flags and (1 shl 4) != 0) o += 4   // Elevation Gain
-            if (flags and (1 shl 5) != 0) o += 1   // Inst. Pace
-            if (flags and (1 shl 6) != 0) o += 1   // Avg. Pace
-            if (flags and (1 shl 7) != 0) {        // Expended Energy
+            if (flags and (1 shl 4) != 0) o += 4
+            if (flags and (1 shl 5) != 0) o += 1
+            if (flags and (1 shl 6) != 0) o += 1
+            if (flags and (1 shl 7) != 0) {
                 if (o + 2 <= b.size) calories = u16(b, o)
                 o += 5
             }
-            if (flags and (1 shl 8) != 0) {        // Heart Rate
+            if (flags and (1 shl 8) != 0) {
                 if (o + 1 <= b.size) hr = b[o].toInt() and 0xFF
                 o += 1
             }
-            if (flags and (1 shl 9) != 0) o += 1   // Metabolic Eq
-            if (flags and (1 shl 10) != 0) {       // Elapsed Time
+            if (flags and (1 shl 9) != 0) o += 1
+            if (flags and (1 shl 10) != 0) {
                 if (o + 2 <= b.size) elapsed = u16(b, o)
                 o += 2
             }
