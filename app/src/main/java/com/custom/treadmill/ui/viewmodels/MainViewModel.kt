@@ -82,9 +82,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
+    /** Пауза ручного управления: belt стоит, скорость запомнена. */
     private val _isPaused = MutableStateFlow(false)
     val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
     private var speedBeforePause: Double = 0.0
+
+    // ---- СВОИ метрики тренировки (не belt'овские) ----
+
+    private val _uiElapsedSec = MutableStateFlow(0)
+    val uiElapsedSec: StateFlow<Int> = _uiElapsedSec.asStateFlow()
+
+    private val _uiDistanceKm = MutableStateFlow(0.0)
+    val uiDistanceKm: StateFlow<Double> = _uiDistanceKm.asStateFlow()
+
+    private val _uiCalories = MutableStateFlow(0)
+    val uiCalories: StateFlow<Int> = _uiCalories.asStateFlow()
+
+    private var metricsJob: Job? = null
 
     private val workoutManager = WorkoutManager()
     val workoutState = workoutManager.state
@@ -132,6 +146,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+
+        startMetricsLoop()
+    }
+
+    // ================================================================
+    //  СВОЙ счётчик метрик тренировки
+    // ================================================================
+    //
+    // Belt ведёт elapsed с момента своего включения, не с начала
+    // тренировки, и продолжает его считать даже когда belt стоит.
+    // Поэтому держим свой счётчик, который растёт ТОЛЬКО когда belt
+    // реально едет быстрее 0.3 км/ч.
+
+    private fun startMetricsLoop() {
+        if (metricsJob?.isActive == true) return
+        metricsJob = viewModelScope.launch {
+            while (isActive) {
+                delay(1000L)
+                if (!isTreadmillReady()) continue
+                val speed = _treadmillData.value.speedKmh
+                if (speed < 0.3) continue
+
+                _uiElapsedSec.value += 1
+                _uiDistanceKm.value += speed / 3600.0
+                // Оценка: ≈60 ккал на км (среднее для бега на дорожке)
+                _uiCalories.value = (_uiDistanceKm.value * 60).toInt()
+            }
+        }
+    }
+
+    private fun resetMetrics() {
+        _uiElapsedSec.value = 0
+        _uiDistanceKm.value = 0.0
+        _uiCalories.value = 0
     }
 
     fun resetHrHistory() { _hrHistory.value = emptyList() }
@@ -273,8 +321,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Ждёт, пока belt реально поедет с заданной минимальной скоростью.
-     * Возвращает true, если дождались; false — если таймаут.
+     * Ждёт, пока belt реально поедет быстрее 0.9 км/ч.
+     * Возвращает true — если дождались, false — таймаут.
      */
     private suspend fun waitForBeltRunning(
         minSpeedKmh: Double = 0.9,
@@ -289,15 +337,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Старт вручную (с главного экрана).
-     * Если стояли на паузе — восстановит запомненную скорость.
+     * Старт вручную (главный экран).
+     *
+     * Если это было после паузы — восстановит скорость.
+     * Иначе — начнёт новую сессию, метрики с нуля.
      */
     fun startTreadmill() {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Сначала подключите дорожку"
             return
         }
-        val restore = if (_isPaused.value && speedBeforePause > 0.5) speedBeforePause else null
+        val isResume = _isPaused.value
+        val restore = if (isResume && speedBeforePause > 0.5) speedBeforePause else null
+
+        if (!isResume) resetMetrics()
+
         _isPaused.value = false
 
         viewModelScope.launch {
@@ -313,45 +367,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Пауза (главный экран). Метрики замирают (belt стоит — счётчик не растёт).
+     * Скорость запоминается.
+     */
     fun pauseTreadmill() {
         if (!isTreadmillReady()) return
         if (_isPaused.value) return
         speedBeforePause = _targetSpeed.value.coerceAtLeast(1.0)
         _isPaused.value = true
         viewModelScope.launch { protocol?.stop() }
-        _statusMessage.value = "Пауза (скорость ${speedBeforePause} сохранена)"
+        _statusMessage.value = "Пауза (${speedBeforePause} км/ч сохранено)"
     }
 
     fun togglePauseTreadmill() {
         if (_isPaused.value) startTreadmill() else pauseTreadmill()
     }
 
+    /**
+     * Стоп (главный экран). Belt останавливается. Следующий старт — с нуля.
+     */
     fun stopTreadmill() {
         if (!isTreadmillReady()) return
         _isPaused.value = false
         speedBeforePause = 0.0
         viewModelScope.launch { protocol?.stop() }
-    }
-
-    fun emergencyStop() {
-        if (!isTreadmillReady()) {
-            _statusMessage.value = "Дорожка не подключена"
-            return
-        }
-        _isPaused.value = false
-        speedBeforePause = 0.0
-        viewModelScope.launch {
-            if (workoutManager.state.value.running && !workoutManager.state.value.paused) {
-                workoutManager.pause()
-            }
-            protocol?.stop()
-            protocol?.setIncline(0.0)
-            setAutoHrEnabled(false)
-            saveWorkoutLog()
-            _statusMessage.value = "ЭКСТРЕННАЯ ОСТАНОВКА"
-            _targetSpeed.value = 0.0
-            _targetIncline.value = 0.0
-        }
     }
 
     fun sendRawHex(hex: String): Boolean {
@@ -389,6 +429,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun stopHrAutoLoop() { hrAutoJob?.cancel(); hrAutoJob = null }
 
+    // ================================================================
+    //  ТРЕНИРОВКА ПО ПРОГРАММЕ
+    // ================================================================
+
     fun startWorkout(program: ProgramData) {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Сначала подключите дорожку"
@@ -396,6 +440,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         resetStats()
         resetHrHistory()
+        resetMetrics()
         workoutLogSaved = false
         _isPaused.value = false
 
@@ -406,7 +451,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     "Дорожка не отвечает. Нажмите любую кнопку на дорожке и запустите снова."
                 return@launch
             }
-            // Belt поехал на 1.0. Передаём управление программе.
             workoutManager.start(
                 scope = viewModelScope, program = program,
                 onSetSpeed = { setSpeed(it) },
@@ -415,13 +459,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Пауза тренировки. Прогресс сохраняется.
+     * Метрики замирают автоматически (belt стоит).
+     * Скорость будет восстановлена при «Продолжить».
+     */
     fun pauseWorkout() {
         if (!workoutManager.state.value.running) return
         workoutManager.pause()
         if (isTreadmillReady()) {
             viewModelScope.launch { protocol?.stop() }
         }
-        _statusMessage.value = "Тренировка на паузе"
+        _statusMessage.value = "Пауза"
     }
 
     fun resumeWorkout() {
@@ -450,8 +499,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Остановить тренировку и belt. Сохранить лог.
-     * Вызывается кнопкой «← Назад» в WorkoutScreen.
+     * Стоп тренировки. Belt останавливается, лог сохраняется,
+     * прогресс сбрасывается. Следующий запуск — с нуля.
      */
     fun stopWorkout() {
         saveWorkoutLog()
@@ -461,8 +510,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun resetWorkout() = stopWorkout()
-
     private fun resetStats() {
         hrSum = 0L; hrCount = 0L; hrMax = 0; speedSum = 0.0; speedCount = 0L
     }
@@ -470,14 +517,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveWorkoutLog() {
         if (workoutLogSaved) return
         val ws = workoutManager.state.value
-        if (ws.totalElapsedSec <= 0) return
+        // Если программа не запускалась — сохраняем ручную тренировку с нашими метриками
+        val durationSec = if (ws.totalElapsedSec > 0) ws.totalElapsedSec else _uiElapsedSec.value
+        if (durationSec <= 0) return
         workoutLogSaved = true
 
-        val data = _treadmillData.value
         val avgHr = if (hrCount > 0) (hrSum / hrCount).toInt() else 0
         val maxHrCopy = hrMax
         val avgSpd = if (speedCount > 0) speedSum / speedCount else 0.0
-        val durationSec = ws.totalElapsedSec
         val programName = ws.programName.ifBlank { "Ручная тренировка" }
 
         viewModelScope.launch {
@@ -486,8 +533,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     dateMillis = System.currentTimeMillis(),
                     programName = programName,
                     durationSec = durationSec,
-                    distanceKm = data.distanceKm,
-                    calories = data.calories,
+                    distanceKm = _uiDistanceKm.value,
+                    calories = _uiCalories.value,
                     avgHeartRate = avgHr,
                     maxHeartRate = maxHrCopy,
                     avgSpeedKmh = avgSpd
