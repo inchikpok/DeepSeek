@@ -25,13 +25,17 @@ import kotlin.math.roundToInt
 @Composable
 fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ws by vm.workoutState.collectAsState()
-    val data by vm.treadmillData.collectAsState()
     val targetSpeed by vm.targetSpeed.collectAsState()
     val targetIncline by vm.targetIncline.collectAsState()
     val hr by vm.heartRate.collectAsState()
     val hrHistory by vm.hrHistory.collectAsState()
     val settings by vm.settings.collectAsState()
     val treadmillState by vm.treadmillState.collectAsState()
+
+    // Свои метрики тренировки
+    val elapsedSec by vm.uiElapsedSec.collectAsState()
+    val distanceKm by vm.uiDistanceKm.collectAsState()
+    val calories by vm.uiCalories.collectAsState()
 
     val treadmillReady = treadmillState == BleConnectionState.READY
     val speedStep = settings.speedStepKmh
@@ -211,9 +215,9 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 8.dp)
                 ) {
-                    WorkoutMetric("Время", formatTime(data.elapsedSec), "", Modifier.weight(1f))
-                    WorkoutMetric("Дистанция", "%.2f".format(data.distanceKm), "км", Modifier.weight(1f))
-                    WorkoutMetric("Калории", "${data.calories}", "ккал", Modifier.weight(1f))
+                    WorkoutMetric("Время", formatTime(elapsedSec), "", Modifier.weight(1f))
+                    WorkoutMetric("Дистанция", "%.2f".format(distanceKm), "км", Modifier.weight(1f))
+                    WorkoutMetric("Калории", "$calories", "ккал", Modifier.weight(1f))
                 }
             }
 
@@ -226,7 +230,7 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                     onClick = { vm.togglePauseWorkout() },
                     enabled = treadmillReady || paused,
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 10.dp),
+                    contentPadding = PaddingValues(vertical = 14.dp),
                     colors = if (paused)
                         ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                     else
@@ -237,42 +241,23 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                 ) {
                     Text(
                         if (paused) "Продолжить" else "Пауза",
-                        fontSize = 13.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
 
                 Button(
-                    onClick = { vm.emergencyStop() },
+                    onClick = { vm.stopWorkout(); onBack() },
                     enabled = treadmillReady,
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 10.dp),
+                    contentPadding = PaddingValues(vertical = 14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
                 ) {
-                    Text("СТОП!", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Стоп", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
-
-                OutlinedButton(
-                    onClick = { vm.resetWorkout(); onBack() },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 10.dp)
-                ) { Text("Сброс", fontSize = 13.sp) }
             }
 
-            Spacer(Modifier.height(6.dp))
-
-            // ---------- Экстренный стоп ----------
-            Button(
-                onClick = { vm.emergencyStop() },
-                enabled = treadmillReady,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-                contentPadding = PaddingValues(vertical = 9.dp)
-            ) {
-                Text("ЭКСТРЕННАЯ ОСТАНОВКА", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
-
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
         }
     }
 }
@@ -372,7 +357,8 @@ private fun WorkoutMetric(
 }
 
 private fun formatTime(sec: Int): String {
-    val m = sec / 60
+    val h = sec / 3600
+    val m = (sec % 3600) / 60
     val s = sec % 60
-    return "%02d:%02d".format(m, s)
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
 }
