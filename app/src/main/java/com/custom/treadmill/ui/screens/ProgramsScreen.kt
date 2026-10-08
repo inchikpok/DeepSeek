@@ -126,6 +126,16 @@ fun ProgramsScreen(
         }
     }
 
+    // Группировка по префиксу — только если программ >= 4 и групп >= 2
+    val grouped: List<Pair<String, List<ProgramEntity>>>? = remember(visible) {
+        if (visible.size < 4) return@remember null
+        val byPrefix = visible.groupBy { groupKey(it.name) }
+        if (byPrefix.size < 2) return@remember null
+        byPrefix.entries
+            .sortedBy { if (it.key == "Другое") "яяя" else it.key.lowercase() }
+            .map { it.key to it.value }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(12.dp))
@@ -224,23 +234,55 @@ fun ProgramsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 20.dp)
             ) {
-                items(visible, key = { it.id }) { p ->
-                    val data = remember(p.id, p.segmentsJson) { programVm.toData(p) }
-                    ProgramCard(
-                        entity = p,
-                        data = data,
-                        onEdit = { editingId = p.id; editingData = data },
-                        onDuplicate = {
-                            val copy = data.copy(name = "${data.name} (копия)")
-                            programVm.save(copy, 0L)
-                        },
-                        onDelete = { programVm.delete(p) },
-                        onExport = {
-                            editingData = data
-                            exportLauncher.launch("${p.name}.json")
-                        },
-                        onStart = { onStartWorkout(data) }
-                    )
+                if (grouped != null) {
+                    grouped.forEach { (prefix, list) ->
+                        item(key = "header_$prefix") {
+                            Text(
+                                prefix,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                            )
+                        }
+                        items(list, key = { it.id }) { p ->
+                            val data = remember(p.id, p.segmentsJson) { programVm.toData(p) }
+                            ProgramCard(
+                                entity = p,
+                                data = data,
+                                onEdit = { editingId = p.id; editingData = data },
+                                onDuplicate = {
+                                    val copy = data.copy(name = "${data.name} (копия)")
+                                    programVm.save(copy, 0L)
+                                },
+                                onDelete = { programVm.delete(p) },
+                                onExport = {
+                                    editingData = data
+                                    exportLauncher.launch("${p.name}.json")
+                                },
+                                onStart = { onStartWorkout(data) }
+                            )
+                        }
+                    }
+                } else {
+                    items(visible, key = { it.id }) { p ->
+                        val data = remember(p.id, p.segmentsJson) { programVm.toData(p) }
+                        ProgramCard(
+                            entity = p,
+                            data = data,
+                            onEdit = { editingId = p.id; editingData = data },
+                            onDuplicate = {
+                                val copy = data.copy(name = "${data.name} (копия)")
+                                programVm.save(copy, 0L)
+                            },
+                            onDelete = { programVm.delete(p) },
+                            onExport = {
+                                editingData = data
+                                exportLauncher.launch("${p.name}.json")
+                            },
+                            onStart = { onStartWorkout(data) }
+                        )
+                    }
                 }
             }
         }
@@ -282,6 +324,30 @@ fun ProgramsScreen(
             }
         )
     }
+}
+
+/**
+ * Ключ группировки для программы.
+ *
+ * Берёт текст до разделителя `·` `—` `–` `:` или до первого пробела.
+ * Например: "Н1 · Че · Темп 3×6 мин @ 12.8" → "Н1".
+ * Если разделителей нет — "Другое".
+ */
+private fun groupKey(name: String): String {
+    val trimmed = name.trim()
+    if (trimmed.isEmpty()) return "Другое"
+
+    val idxDelim = trimmed.indexOfFirst { it == '·' || it == '—' || it == '–' || it == ':' }
+    if (idxDelim in 1..20) {
+        val key = trimmed.substring(0, idxDelim).trim()
+        if (key.isNotBlank()) return key
+    }
+    val idxSpace = trimmed.indexOf(' ')
+    if (idxSpace in 1..15) {
+        val key = trimmed.substring(0, idxSpace).trim()
+        if (key.isNotBlank()) return key
+    }
+    return "Другое"
 }
 
 @Composable
