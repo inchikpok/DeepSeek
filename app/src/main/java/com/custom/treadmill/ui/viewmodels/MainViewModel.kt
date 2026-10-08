@@ -387,8 +387,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Стоп (главный экран). Belt останавливается. Следующий старт — с нуля.
      */
+/**
+ * Стоп на главном экране.
+ * Если идёт тренировка по программе — завершает и её (сохраняет лог),
+ * а не просто останавливает belt.
+ */
     fun stopTreadmill() {
         if (!isTreadmillReady()) return
+
+        val ws = workoutManager.state.value
+        if (ws.running || ws.paused) {
+            stopWorkout()
+            return
+        }
+
         _isPaused.value = false
         speedBeforePause = 0.0
         viewModelScope.launch { protocol?.stop() }
