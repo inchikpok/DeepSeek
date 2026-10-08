@@ -21,7 +21,14 @@ data class WorkoutState(
     val totalSegments: Int = 0,
     val currentSegmentName: String = "",
     val segmentElapsedSec: Int = 0,
-    val segmentDurationSec: Int = 0
+    val segmentDurationSec: Int = 0,
+
+    // Информация о СЛЕДУЮЩЕМ сегменте (для UI)
+    val hasNextSegment: Boolean = false,
+    val nextSegmentName: String = "",
+    val nextSegmentSpeedKmh: Double = 0.0,
+    val nextSegmentInclinePercent: Double = 0.0,
+    val nextSegmentDurationSec: Int = 0
 )
 
 class WorkoutManager {
@@ -48,6 +55,9 @@ class WorkoutManager {
         onSetInclineRef = onSetIncline
 
         val total = program.segments.sumOf { it.durationSec }
+        val first = program.segments.firstOrNull()
+        val second = program.segments.getOrNull(1)
+
         _state.value = WorkoutState(
             running = true,
             paused = false,
@@ -58,8 +68,13 @@ class WorkoutManager {
             currentSegmentIndex = 0,
             segmentElapsedSec = 0,
             totalElapsedSec = 0,
-            segmentDurationSec = program.segments.firstOrNull()?.durationSec ?: 0,
-            currentSegmentName = program.segments.firstOrNull()?.name.orEmpty()
+            segmentDurationSec = first?.durationSec ?: 0,
+            currentSegmentName = first?.name.orEmpty(),
+            hasNextSegment = second != null,
+            nextSegmentName = second?.name.orEmpty(),
+            nextSegmentSpeedKmh = second?.speedKmh ?: 0.0,
+            nextSegmentInclinePercent = second?.inclinePercent ?: 0.0,
+            nextSegmentDurationSec = second?.durationSec ?: 0
         )
         launchLoop()
     }
@@ -85,11 +100,6 @@ class WorkoutManager {
         }
     }
 
-    /**
-     * Пропустить текущий сегмент и перейти к следующему.
-     * Belt сразу переводится на скорость/наклон нового сегмента.
-     * Если это был последний сегмент — программа завершается.
-     */
     fun skipToNextSegment() {
         val program = currentProgram ?: return
         val s = _state.value
@@ -97,7 +107,6 @@ class WorkoutManager {
 
         val nextIndex = s.currentSegmentIndex + 1
 
-        // Последний сегмент → завершаем программу
         if (nextIndex >= program.segments.size) {
             job?.cancel()
             job = null
@@ -110,21 +119,26 @@ class WorkoutManager {
             return
         }
 
-        // Отменяем текущий loop и стартуем новый с nextIndex
         job?.cancel()
         job = null
 
         val next = program.segments[nextIndex]
+        val after = program.segments.getOrNull(nextIndex + 1)
+
         _state.value = s.copy(
             running = true,
             paused = false,
             currentSegmentIndex = nextIndex,
             segmentElapsedSec = 0,
             segmentDurationSec = next.durationSec,
-            currentSegmentName = next.name.ifBlank { "Сегмент ${nextIndex + 1}" }
+            currentSegmentName = next.name.ifBlank { "Сегмент ${nextIndex + 1}" },
+            hasNextSegment = after != null,
+            nextSegmentName = after?.name.orEmpty(),
+            nextSegmentSpeedKmh = after?.speedKmh ?: 0.0,
+            nextSegmentInclinePercent = after?.inclinePercent ?: 0.0,
+            nextSegmentDurationSec = after?.durationSec ?: 0
         )
 
-        // Belt сразу переводим на параметры нового сегмента
         scopeRef?.launch {
             onSetSpeedRef?.invoke(next.speedKmh)
             onSetInclineRef?.invoke(next.inclinePercent)
@@ -167,6 +181,7 @@ class WorkoutManager {
 
             while (index < segments.size && isActive) {
                 val seg = segments[index]
+                val next = segments.getOrNull(index + 1)
 
                 if (_state.value.segmentElapsedSec == 0) {
                     onSetSpeed(seg.speedKmh)
@@ -175,7 +190,12 @@ class WorkoutManager {
                         currentSegmentIndex = index,
                         currentSegmentName = seg.name.ifBlank { "Сегмент ${index + 1}" },
                         segmentDurationSec = seg.durationSec,
-                        segmentElapsedSec = 0
+                        segmentElapsedSec = 0,
+                        hasNextSegment = next != null,
+                        nextSegmentName = next?.name.orEmpty(),
+                        nextSegmentSpeedKmh = next?.speedKmh ?: 0.0,
+                        nextSegmentInclinePercent = next?.inclinePercent ?: 0.0,
+                        nextSegmentDurationSec = next?.durationSec ?: 0
                     )
                 }
 
