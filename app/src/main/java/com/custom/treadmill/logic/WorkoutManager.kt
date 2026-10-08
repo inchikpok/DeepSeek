@@ -21,14 +21,7 @@ data class WorkoutState(
     val totalSegments: Int = 0,
     val currentSegmentName: String = "",
     val segmentElapsedSec: Int = 0,
-    val segmentDurationSec: Int = 0,
-
-    // Информация о СЛЕДУЮЩЕМ сегменте (для UI)
-    val hasNextSegment: Boolean = false,
-    val nextSegmentName: String = "",
-    val nextSegmentSpeedKmh: Double = 0.0,
-    val nextSegmentInclinePercent: Double = 0.0,
-    val nextSegmentDurationSec: Int = 0
+    val segmentDurationSec: Int = 0
 )
 
 class WorkoutManager {
@@ -55,9 +48,6 @@ class WorkoutManager {
         onSetInclineRef = onSetIncline
 
         val total = program.segments.sumOf { it.durationSec }
-        val first = program.segments.firstOrNull()
-        val second = program.segments.getOrNull(1)
-
         _state.value = WorkoutState(
             running = true,
             paused = false,
@@ -68,13 +58,8 @@ class WorkoutManager {
             currentSegmentIndex = 0,
             segmentElapsedSec = 0,
             totalElapsedSec = 0,
-            segmentDurationSec = first?.durationSec ?: 0,
-            currentSegmentName = first?.name.orEmpty(),
-            hasNextSegment = second != null,
-            nextSegmentName = second?.name.orEmpty(),
-            nextSegmentSpeedKmh = second?.speedKmh ?: 0.0,
-            nextSegmentInclinePercent = second?.inclinePercent ?: 0.0,
-            nextSegmentDurationSec = second?.durationSec ?: 0
+            segmentDurationSec = program.segments.firstOrNull()?.durationSec ?: 0,
+            currentSegmentName = program.segments.firstOrNull()?.name.orEmpty()
         )
         launchLoop()
     }
@@ -100,50 +85,49 @@ class WorkoutManager {
         }
     }
 
-    fun skipToNextSegment() {
-        val program = currentProgram ?: return
+    /**
+     * Пропустить текущий сегмент — сразу перейти к следующему.
+     * Работает и на паузе (после «Продолжить» начнётся со следующего).
+     */
+    fun skipCurrentSegment() {
         val s = _state.value
-        if (!s.running && !s.paused) return
+        if (!s.running) return
+        val program = currentProgram ?: return
 
         val nextIndex = s.currentSegmentIndex + 1
 
+        // Дальше сегментов нет — просто завершаем
         if (nextIndex >= program.segments.size) {
             job?.cancel()
             job = null
             _state.value = s.copy(
                 running = false,
                 paused = false,
-                finished = true,
-                segmentElapsedSec = 0
+                finished = true
             )
             return
         }
 
+        // Учитываем оставшееся время текущего сегмента в общий счётчик
+        val remainingInCurrent = (s.segmentDurationSec - s.segmentElapsedSec).coerceAtLeast(0)
+        val newTotal = s.totalElapsedSec + remainingInCurrent
+
+        val next = program.segments[nextIndex]
+
+        // Останавливаем текущий loop
         job?.cancel()
         job = null
 
-        val next = program.segments[nextIndex]
-        val after = program.segments.getOrNull(nextIndex + 1)
-
+        // Переводим state на новый сегмент
         _state.value = s.copy(
-            running = true,
-            paused = false,
             currentSegmentIndex = nextIndex,
-            segmentElapsedSec = 0,
-            segmentDurationSec = next.durationSec,
             currentSegmentName = next.name.ifBlank { "Сегмент ${nextIndex + 1}" },
-            hasNextSegment = after != null,
-            nextSegmentName = after?.name.orEmpty(),
-            nextSegmentSpeedKmh = after?.speedKmh ?: 0.0,
-            nextSegmentInclinePercent = after?.inclinePercent ?: 0.0,
-            nextSegmentDurationSec = after?.durationSec ?: 0
+            segmentDurationSec = next.durationSec,
+            segmentElapsedSec = 0,
+            totalElapsedSec = newTotal
         )
 
-        scopeRef?.launch {
-            onSetSpeedRef?.invoke(next.speedKmh)
-            onSetInclineRef?.invoke(next.inclinePercent)
-        }
-
+        // Перезапускаем loop — он подхватит новый индекс
         launchLoop()
     }
 
@@ -157,8 +141,6 @@ class WorkoutManager {
         _state.value = WorkoutState()
     }
 
-    fun reset() = stop()
-
     private fun launchLoop() {
         val scope = scopeRef ?: return
         val program = currentProgram ?: return
@@ -168,21 +150,13 @@ class WorkoutManager {
         job = scope.launch {
             val segments = program.segments
 
-            if (_state.value.segmentElapsedSec > 0 &&
-                _state.value.currentSegmentIndex < segments.size
-            ) {
-                val seg = segments[_state.value.currentSegmentIndex]
-                onSetSpeed(seg.speedKmh)
-                onSetIncline(seg.inclinePercent)
-            }
-
             var index = _state.value.currentSegmentIndex
             var totalElapsed = _state.value.totalElapsedSec
 
             while (index < segments.size && isActive) {
                 val seg = segments[index]
-                val next = segments.getOrNull(index + 1)
 
+                // При входе в сегмент — сразу отправляем команды
                 if (_state.value.segmentElapsedSec == 0) {
                     onSetSpeed(seg.speedKmh)
                     onSetIncline(seg.inclinePercent)
@@ -190,12 +164,7 @@ class WorkoutManager {
                         currentSegmentIndex = index,
                         currentSegmentName = seg.name.ifBlank { "Сегмент ${index + 1}" },
                         segmentDurationSec = seg.durationSec,
-                        segmentElapsedSec = 0,
-                        hasNextSegment = next != null,
-                        nextSegmentName = next?.name.orEmpty(),
-                        nextSegmentSpeedKmh = next?.speedKmh ?: 0.0,
-                        nextSegmentInclinePercent = next?.inclinePercent ?: 0.0,
-                        nextSegmentDurationSec = next?.durationSec ?: 0
+                        segmentElapsedSec = 0
                     )
                 }
 
