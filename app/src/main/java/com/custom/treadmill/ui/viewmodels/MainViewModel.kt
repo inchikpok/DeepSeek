@@ -335,7 +335,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val now = System.currentTimeMillis()
             // Повторяем 07 каждые 4 секунды (без 00 — belt уже получил контроль)
             if (now - lastPingAt >= 4000L) {
-                protocol?.ping07()
+                (protocol as? FTMSProtocol)?.ping07()
                 lastPingAt = now
                 addLog("wait: belt ещё не поехал, повтор 07")
             }
