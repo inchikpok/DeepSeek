@@ -315,12 +315,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Ожидание старта belt'а.
-     *
-     * Belt на этой прошивке стартует с задержкой 10-30 сек. Поэтому
-     * каждые 4 секунды повторяем `07`, пока belt не поедет.
-     *
-     * @param minSpeedKmh — минимальная скорость, при которой считаем «поехал».
-     * @param timeoutMs   — общий таймаут (по умолчанию 30 сек).
+     * Belt на этой прошивке стартует с задержкой 10-30 сек.
+     * Каждые 4 секунды повторяем `07`, пока belt не поедет.
      */
     private suspend fun waitForBeltRunning(
         minSpeedKmh: Double = 0.9,
@@ -333,7 +329,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (_treadmillData.value.speedKmh >= minSpeedKmh) return true
 
             val now = System.currentTimeMillis()
-            // Повторяем 07 каждые 4 секунды (без 00 — belt уже получил контроль)
             if (now - lastPingAt >= 4000L) {
                 (protocol as? FTMSProtocol)?.ping07()
                 lastPingAt = now
@@ -345,9 +340,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return false
     }
 
-    /**
-     * Старт вручную (главный экран).
-     */
     fun startTreadmill() {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Сначала подключите дорожку"
@@ -385,9 +377,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (_isPaused.value) startTreadmill() else pauseTreadmill()
     }
 
-    /**
-     * Стоп. Если идёт тренировка — завершает её (сохраняет лог).
-     */
     fun stopTreadmill() {
         if (!isTreadmillReady()) return
 
@@ -499,6 +488,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             s.paused -> resumeWorkout()
             s.running -> pauseWorkout()
         }
+    }
+
+    /**
+     * Пропустить текущий сегмент — сразу перейти к следующему.
+     */
+    fun skipWorkoutSegment() {
+        if (!workoutManager.state.value.running) return
+        workoutManager.skipCurrentSegment()
     }
 
     fun stopWorkout() {
