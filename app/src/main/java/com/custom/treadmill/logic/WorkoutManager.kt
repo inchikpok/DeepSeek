@@ -35,7 +35,6 @@ class WorkoutManager {
     private var onSetSpeedRef: (suspend (Double) -> Unit)? = null
     private var onSetInclineRef: (suspend (Double) -> Unit)? = null
 
-    /** Запустить программу с нуля. */
     fun start(
         scope: CoroutineScope,
         program: ProgramData,
@@ -65,7 +64,6 @@ class WorkoutManager {
         launchLoop()
     }
 
-    /** Пауза. Состояние сохраняется, job отменяется. */
     fun pause() {
         if (!_state.value.running || _state.value.paused) return
         job?.cancel()
@@ -73,14 +71,12 @@ class WorkoutManager {
         _state.value = _state.value.copy(paused = true)
     }
 
-    /** Продолжить с того места, где остановились. */
     fun resume() {
         if (!_state.value.paused) return
         _state.value = _state.value.copy(paused = false)
         launchLoop()
     }
 
-    /** Переключить паузу. */
     fun togglePause() {
         val s = _state.value
         when {
@@ -89,7 +85,54 @@ class WorkoutManager {
         }
     }
 
-    /** Полный сброс. Программа удаляется. */
+    /**
+     * Пропустить текущий сегмент и перейти к следующему.
+     * Belt сразу переводится на скорость/наклон нового сегмента.
+     * Если это был последний сегмент — программа завершается.
+     */
+    fun skipToNextSegment() {
+        val program = currentProgram ?: return
+        val s = _state.value
+        if (!s.running && !s.paused) return
+
+        val nextIndex = s.currentSegmentIndex + 1
+
+        // Последний сегмент → завершаем программу
+        if (nextIndex >= program.segments.size) {
+            job?.cancel()
+            job = null
+            _state.value = s.copy(
+                running = false,
+                paused = false,
+                finished = true,
+                segmentElapsedSec = 0
+            )
+            return
+        }
+
+        // Отменяем текущий loop и стартуем новый с nextIndex
+        job?.cancel()
+        job = null
+
+        val next = program.segments[nextIndex]
+        _state.value = s.copy(
+            running = true,
+            paused = false,
+            currentSegmentIndex = nextIndex,
+            segmentElapsedSec = 0,
+            segmentDurationSec = next.durationSec,
+            currentSegmentName = next.name.ifBlank { "Сегмент ${nextIndex + 1}" }
+        )
+
+        // Belt сразу переводим на параметры нового сегмента
+        scopeRef?.launch {
+            onSetSpeedRef?.invoke(next.speedKmh)
+            onSetInclineRef?.invoke(next.inclinePercent)
+        }
+
+        launchLoop()
+    }
+
     fun stop() {
         job?.cancel()
         job = null
@@ -100,7 +143,6 @@ class WorkoutManager {
         _state.value = WorkoutState()
     }
 
-    /** Устаревшее имя (совместимость). */
     fun reset() = stop()
 
     private fun launchLoop() {
@@ -112,7 +154,6 @@ class WorkoutManager {
         job = scope.launch {
             val segments = program.segments
 
-            // Если это resume (мы уже в середине сегмента) — сразу вернём команды
             if (_state.value.segmentElapsedSec > 0 &&
                 _state.value.currentSegmentIndex < segments.size
             ) {
@@ -127,7 +168,6 @@ class WorkoutManager {
             while (index < segments.size && isActive) {
                 val seg = segments[index]
 
-                // Новый сегмент — отправляем команды
                 if (_state.value.segmentElapsedSec == 0) {
                     onSetSpeed(seg.speedKmh)
                     onSetIncline(seg.inclinePercent)
@@ -171,7 +211,6 @@ class WorkoutManager {
         }
     }
 
-    /** Заглушка для наклона: ничего не делает. */
     private suspend fun noopDouble(@Suppress("UNUSED_PARAMETER") value: Double) {
         // no-op
     }
