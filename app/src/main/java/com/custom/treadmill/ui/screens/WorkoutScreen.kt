@@ -45,29 +45,31 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
     val targetHr = if (settings.hrMode == HrMode.TARGET) settings.targetHr
                    else (settings.zoneMin + settings.zoneMax) / 2
 
-    val isLastSegment = ws.currentSegmentIndex >= ws.totalSegments - 1
-
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier
                 .fillMaxSize()
                 .padding(horizontal = 10.dp)
         ) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
 
+            // ==========================================================
+            //  Шапка: ← Назад | Название | Далее →
+            // ==========================================================
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(
                     onClick = { vm.stopWorkout(); onBack() },
-                    contentPadding = PaddingValues(4.dp)
-                ) { Text("← Назад") }
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                ) { Text("← Назад", fontSize = 13.sp) }
+
                 Column(
                     Modifier.weight(1f),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Тренировка", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("Тренировка", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     Text(
                         ws.programName.ifBlank { "Ручная" },
                         fontSize = 10.sp,
@@ -76,11 +78,28 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(Modifier.width(60.dp))
+
+                val isLast = !ws.hasNextSegment
+                Button(
+                    onClick = { vm.skipWorkoutSegment() },
+                    enabled = treadmillReady && !ws.paused && !isLast,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.SkipNext,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Text("Далее", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
 
+            // ==========================================================
+            //  Прогресс + следующая сегмент
+            // ==========================================================
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
                     val progress = if (ws.totalSec > 0)
@@ -125,6 +144,41 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
+
+                    // Информация о СЛЕДУЮЩЕМ сегменте
+                    if (ws.hasNextSegment) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Далее:",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                ws.nextSegmentName.ifBlank { "Сегмент ${ws.currentSegmentIndex + 2}" },
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                "%.1f км/ч · %d%%".format(
+                                    ws.nextSegmentSpeedKmh,
+                                    ws.nextSegmentInclinePercent.roundToInt()
+                                ),
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
                     Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(
                         progress = progress.coerceIn(0f, 1f),
@@ -220,7 +274,7 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Пауза / Следующий / Стоп ----------
+            // ---------- Пауза / Стоп ----------
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val paused = ws.paused
 
@@ -228,7 +282,7 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                     onClick = { vm.togglePauseWorkout() },
                     enabled = treadmillReady || paused,
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 12.dp),
+                    contentPadding = PaddingValues(vertical = 14.dp),
                     colors = if (paused)
                         ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                     else
@@ -239,34 +293,19 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                 ) {
                     Text(
                         if (paused) "Продолжить" else "Пауза",
-                        fontSize = 12.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-                }
-
-                OutlinedButton(
-                    onClick = { vm.skipWorkoutSegment() },
-                    enabled = treadmillReady && !paused && !isLastSegment,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 12.dp)
-                ) {
-                    Icon(
-                        Icons.Default.SkipNext,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(2.dp))
-                    Text("Далее", fontSize = 12.sp)
                 }
 
                 Button(
                     onClick = { vm.stopWorkout(); onBack() },
                     enabled = treadmillReady,
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 12.dp),
+                    contentPadding = PaddingValues(vertical = 14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
                 ) {
-                    Text("Стоп", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Стоп", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
