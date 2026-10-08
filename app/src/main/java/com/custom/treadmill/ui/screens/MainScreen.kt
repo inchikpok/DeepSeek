@@ -41,7 +41,6 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val treadmillName by vm.treadmillName.collectAsState()
     val hrState by vm.hrState.collectAsState()
     val hrName by vm.hrName.collectAsState()
-    val data by vm.treadmillData.collectAsState()
     val targetSpeed by vm.targetSpeed.collectAsState()
     val targetIncline by vm.targetIncline.collectAsState()
     val hr by vm.heartRate.collectAsState()
@@ -50,6 +49,11 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val statusMessage by vm.statusMessage.collectAsState()
     val settings by vm.settings.collectAsState()
     val paused by vm.isPaused.collectAsState()
+
+    // Свои метрики, не belt'овские
+    val elapsedSec by vm.uiElapsedSec.collectAsState()
+    val distanceKm by vm.uiDistanceKm.collectAsState()
+    val calories by vm.uiCalories.collectAsState()
 
     val treadmillReady = treadmillState == BleConnectionState.READY
     val speedStep = settings.speedStepKmh
@@ -153,7 +157,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                             )
                             MetricBlock(
                                 "Время",
-                                formatTime(data.elapsedSec),
+                                formatTime(elapsedSec),
                                 "",
                                 Modifier.weight(1f)
                             )
@@ -162,13 +166,13 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         Row(Modifier.fillMaxWidth()) {
                             MetricBlock(
                                 "Дистанция",
-                                "%.2f".format(data.distanceKm),
+                                "%.2f".format(distanceKm),
                                 "км",
                                 Modifier.weight(1f)
                             )
                             MetricBlock(
                                 "Калории",
-                                "${data.calories}",
+                                "$calories",
                                 "ккал",
                                 Modifier.weight(1f)
                             )
@@ -211,16 +215,16 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         onClick = { vm.startTreadmill() },
                         enabled = treadmillReady && !paused,
                         modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(vertical = 10.dp)
+                        contentPadding = PaddingValues(vertical = 14.dp)
                     ) {
-                        Text("Старт", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Старт", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     Button(
                         onClick = { vm.togglePauseTreadmill() },
                         enabled = treadmillReady,
                         modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(vertical = 10.dp),
+                        contentPadding = PaddingValues(vertical = 14.dp),
                         colors = if (paused)
                             ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                         else
@@ -231,7 +235,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     ) {
                         Text(
                             if (paused) "Продолжить" else "Пауза",
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -240,28 +244,17 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         onClick = { vm.stopTreadmill() },
                         enabled = treadmillReady,
                         modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(vertical = 10.dp),
+                        contentPadding = PaddingValues(vertical = 14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     ) {
-                        Text("Стоп", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Стоп", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
-
-                // ---------- Экстренный стоп ----------
-                Button(
-                    onClick = { vm.emergencyStop() },
-                    enabled = treadmillReady,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-                    contentPadding = PaddingValues(vertical = 9.dp)
-                ) { Text("ЭКСТРЕННАЯ ОСТАНОВКА", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
-
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
             }
 
             // ---------- Всплывающее сообщение ----------
@@ -498,7 +491,8 @@ private fun ScanDialog(
 }
 
 private fun formatTime(sec: Int): String {
-    val m = sec / 60
+    val h = sec / 3600
+    val m = (sec % 3600) / 60
     val s = sec % 60
-    return "%02d:%02d".format(m, s)
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
 }
