@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.custom.treadmill.TreadmillApp
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.ui.Routes
+import com.custom.treadmill.ui.components.RollingText
 import com.custom.treadmill.ui.hasBlePermissions
 import com.custom.treadmill.ui.requiredBlePermissions
 import com.custom.treadmill.ui.viewmodels.MainViewModel
@@ -67,16 +68,20 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+
+            // ==========================================================
+            //  Прокручиваемая верхняя часть
+            // ==========================================================
             Column(
                 Modifier
-                    .fillMaxSize()
+                    .weight(1f)
+                    .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 10.dp)
             ) {
                 Spacer(Modifier.height(6.dp))
 
-                // ---------- Заголовок ----------
                 Text(
                     "Treadmill Control",
                     fontSize = 20.sp,
@@ -98,7 +103,6 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
 
                 Spacer(Modifier.height(6.dp))
 
-                // ---------- Статусы ----------
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CompactStatus(
                         label = "Дорожка",
@@ -120,7 +124,6 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
 
                 Spacer(Modifier.height(6.dp))
 
-                // ---------- Плитки управления ----------
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ControlTile(
                         label = "Скорость",
@@ -143,7 +146,6 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
 
                 Spacer(Modifier.height(6.dp))
 
-                // ---------- Метрики ----------
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(vertical = 8.dp, horizontal = 10.dp)) {
                         Row(Modifier.fillMaxWidth()) {
@@ -180,7 +182,6 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
 
                 Spacer(Modifier.height(6.dp))
 
-                // ---------- Автопульс ----------
                 Card(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
@@ -205,10 +206,45 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
+            }
 
-                // ---------- Старт / Пауза / Стоп ----------
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // ==========================================================
+            //  Всплывающее сообщение — над футером
+            // ==========================================================
+            statusMessage?.let { msg ->
+                Card(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp)
+                        .padding(bottom = 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    )
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(msg, modifier = Modifier.weight(1f), fontSize = 12.sp)
+                        TextButton(onClick = { vm.clearStatusMessage() }) { Text("OK") }
+                    }
+                }
+            }
+
+            // ==========================================================
+            //  Фиксированный футер с кнопками Старт/Пауза/Стоп
+            // ==========================================================
+            Card(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Button(
                         onClick = { vm.startTreadmill() },
                         enabled = treadmillReady && !paused,
@@ -249,29 +285,6 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         )
                     ) {
                         Text("Стоп", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-            }
-
-            // ---------- Всплывающее сообщение ----------
-            statusMessage?.let { msg ->
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(10.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                    )
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(msg, modifier = Modifier.weight(1f), fontSize = 12.sp)
-                        TextButton(onClick = { vm.clearStatusMessage() }) { Text("OK") }
                     }
                 }
             }
@@ -384,7 +397,7 @@ private fun ControlTile(
                 horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.padding(vertical = 1.dp)
             ) {
-                Text(
+                RollingText(
                     text = value,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
@@ -449,7 +462,7 @@ private fun MetricBlock(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.Center
         ) {
-            Text(
+            RollingText(
                 text = value,
                 fontSize = 19.sp,
                 fontWeight = FontWeight.SemiBold
