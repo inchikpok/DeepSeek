@@ -102,6 +102,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var hrAutoJob: Job? = null
     private var settingsCollectorJob: Job? = null
+    private var startupJob: Job? = null
     private var workoutLogSaved = false
 
     private var hrSum = 0L; private var hrCount = 0L; private var hrMax = 0
@@ -176,6 +177,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun stopScan() { ble.stopScan(); _scanMode.value = ScanMode.NONE }
     fun clearStatusMessage() { _statusMessage.value = null }
 
+    /** Отменить текущую попытку старта (когда ждём пробуждения дорожки). */
+    fun cancelStartup() {
+        startupJob?.cancel()
+        startupJob = null
+        _statusMessage.value = "Запуск отменён"
+    }
+
     fun connectTreadmill(device: BluetoothDevice) {
         disconnectTreadmill()
         _treadmillName.value = try { device.name } catch (_: SecurityException) { null }
@@ -239,6 +247,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun disconnectTreadmill() {
         settingsCollectorJob?.cancel()
         settingsCollectorJob = null
+        startupJob?.cancel()
+        startupJob = null
         protocol = null
         treadmillConn?.disconnect()
         treadmillConn = null
@@ -307,13 +317,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { protocol?.setIncline(safe) }
     }
 
+    /**
+     * Ждём, пока belt реально поедет.
+     *
+     * Таймаут 60 сек — чтобы спящая дорожка успела проснуться после
+     * нажатия физической кнопки. Через 5 сек показываем подсказку.
+     * Если belt запустился — обнуляем подсказку.
+     */
     private suspend fun waitForBeltRunning(
         minSpeedKmh: Double = 0.9,
-        timeoutMs: Long = 15000L
+        timeoutMs: Long = 60000L,
+        showHintAfterMs: Long = 5000L
     ): Boolean {
         val start = System.currentTimeMillis()
+        var hintShown = false
         while (System.currentTimeMillis() - start < timeoutMs) {
-            if (_treadmillData.value.speedKmh >= minSpeedKmh) return true
+            if (_treadmillData.value.speedKmh >= minSpeedKmh) {
+                if (hintShown) _statusMessage.value = null
+                return true
+            }
+            if (!hintShown && System.currentTimeMillis() - start >= showHintAfterMs) {
+                hintShown = true
+                _statusMessage.value = "Ожидание дорожки. Нажмите любую кнопку на дорожке."
+            }
             delay(150L)
         }
         return false
@@ -330,10 +356,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!isResume) resetMetrics()
 
         _isPaused.value = false
-
-        viewModelScope.launch {
+        startupJob?.cancel()
+        startupJob = viewModelScope.launch {
             protocol?.start()
-            if (!waitForBeltRunning(0.9, 15000L)) {
+            if (!waitForBeltRunning()) {
                 _statusMessage.value =
                     "Дорожка не отвечает. Нажмите любую кнопку на дорожке и попробуйте снова."
                 return@launch
@@ -357,10 +383,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (_isPaused.value) startTreadmill() else pauseTreadmill()
     }
 
-    /**
-     * Стоп на главном экране.
-     * Если идёт тренировка — завершает и её (сохраняет лог).
-     */
     fun stopTreadmill() {
         if (!isTreadmillReady()) return
 
@@ -370,6 +392,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
+        startupJob?.cancel()
+        startupJob = null
         _isPaused.value = false
         speedBeforePause = 0.0
         viewModelScope.launch { protocol?.stop() }
@@ -421,9 +445,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         workoutLogSaved = false
         _isPaused.value = false
 
-        viewModelScope.launch {
+        startupJob?.cancel()
+        startupJob = viewModelScope.launch {
             protocol?.start()
-            if (!waitForBeltRunning(0.9, 15000L)) {
+            if (!waitForBeltRunning()) {
                 _statusMessage.value =
                     "Дорожка не отвечает. Нажмите любую кнопку на дорожке и запустите снова."
                 return@launch
@@ -451,9 +476,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _statusMessage.value = "Дорожка не подключена — не могу продолжить"
             return
         }
-        viewModelScope.launch {
+        startupJob?.cancel()
+        startupJob = viewModelScope.launch {
             protocol?.start()
-            if (!waitForBeltRunning(0.9, 15000L)) {
+            if (!waitForBeltRunning()) {
                 _statusMessage.value =
                     "Дорожка не отвечает. Нажмите кнопку на дорожке и продолжите снова."
                 return@launch
@@ -470,10 +496,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Пропустить текущий сегмент. Belt перейдёт на параметры следующего.
-     * На последнем сегменте — программа завершается.
-     */
     fun skipWorkoutSegment() {
         val s = workoutManager.state.value
         if (!s.running && !s.paused) return
@@ -481,6 +503,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopWorkout() {
+        startupJob?.cancel()
+        startupJob = null
         saveWorkoutLog()
         workoutManager.stop()
         if (isTreadmillReady()) {
