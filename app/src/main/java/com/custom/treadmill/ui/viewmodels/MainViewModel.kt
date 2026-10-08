@@ -82,12 +82,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
-    /** Пауза ручного управления: belt стоит, скорость запомнена. */
     private val _isPaused = MutableStateFlow(false)
     val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
     private var speedBeforePause: Double = 0.0
-
-    // ---- СВОИ метрики тренировки (не belt'овские) ----
 
     private val _uiElapsedSec = MutableStateFlow(0)
     val uiElapsedSec: StateFlow<Int> = _uiElapsedSec.asStateFlow()
@@ -150,15 +147,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         startMetricsLoop()
     }
 
-    // ================================================================
-    //  СВОЙ счётчик метрик тренировки
-    // ================================================================
-    //
-    // Belt ведёт elapsed с момента своего включения, не с начала
-    // тренировки, и продолжает его считать даже когда belt стоит.
-    // Поэтому держим свой счётчик, который растёт ТОЛЬКО когда belt
-    // реально едет быстрее 0.3 км/ч.
-
     private fun startMetricsLoop() {
         if (metricsJob?.isActive == true) return
         metricsJob = viewModelScope.launch {
@@ -170,7 +158,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
                 _uiElapsedSec.value += 1
                 _uiDistanceKm.value += speed / 3600.0
-                // Оценка: ≈60 ккал на км (среднее для бега на дорожке)
                 _uiCalories.value = (_uiDistanceKm.value * 60).toInt()
             }
         }
@@ -320,10 +307,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { protocol?.setIncline(safe) }
     }
 
-    /**
-     * Ждёт, пока belt реально поедет быстрее 0.9 км/ч.
-     * Возвращает true — если дождались, false — таймаут.
-     */
     private suspend fun waitForBeltRunning(
         minSpeedKmh: Double = 0.9,
         timeoutMs: Long = 15000L
@@ -336,12 +319,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return false
     }
 
-    /**
-     * Старт вручную (главный экран).
-     *
-     * Если это было после паузы — восстановит скорость.
-     * Иначе — начнёт новую сессию, метрики с нуля.
-     */
     fun startTreadmill() {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Сначала подключите дорожку"
@@ -367,10 +344,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Пауза (главный экран). Метрики замирают (belt стоит — счётчик не растёт).
-     * Скорость запоминается.
-     */
     fun pauseTreadmill() {
         if (!isTreadmillReady()) return
         if (_isPaused.value) return
@@ -385,13 +358,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Стоп (главный экран). Belt останавливается. Следующий старт — с нуля.
+     * Стоп на главном экране.
+     * Если идёт тренировка — завершает и её (сохраняет лог).
      */
-/**
- * Стоп на главном экране.
- * Если идёт тренировка по программе — завершает и её (сохраняет лог),
- * а не просто останавливает belt.
- */
     fun stopTreadmill() {
         if (!isTreadmillReady()) return
 
@@ -441,10 +410,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun stopHrAutoLoop() { hrAutoJob?.cancel(); hrAutoJob = null }
 
-    // ================================================================
-    //  ТРЕНИРОВКА ПО ПРОГРАММЕ
-    // ================================================================
-
     fun startWorkout(program: ProgramData) {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Сначала подключите дорожку"
@@ -471,11 +436,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Пауза тренировки. Прогресс сохраняется.
-     * Метрики замирают автоматически (belt стоит).
-     * Скорость будет восстановлена при «Продолжить».
-     */
     fun pauseWorkout() {
         if (!workoutManager.state.value.running) return
         workoutManager.pause()
@@ -511,9 +471,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Стоп тренировки. Belt останавливается, лог сохраняется,
-     * прогресс сбрасывается. Следующий запуск — с нуля.
+     * Пропустить текущий сегмент. Belt перейдёт на параметры следующего.
+     * На последнем сегменте — программа завершается.
      */
+    fun skipWorkoutSegment() {
+        val s = workoutManager.state.value
+        if (!s.running && !s.paused) return
+        workoutManager.skipToNextSegment()
+    }
+
     fun stopWorkout() {
         saveWorkoutLog()
         workoutManager.stop()
@@ -529,7 +495,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveWorkoutLog() {
         if (workoutLogSaved) return
         val ws = workoutManager.state.value
-        // Если программа не запускалась — сохраняем ручную тренировку с нашими метриками
         val durationSec = if (ws.totalElapsedSec > 0) ws.totalElapsedSec else _uiElapsedSec.value
         if (durationSec <= 0) return
         workoutLogSaved = true
