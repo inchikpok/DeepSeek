@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.sp
 import com.custom.treadmill.TreadmillApp
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.ui.Routes
-import com.custom.treadmill.ui.components.RollingText
 import com.custom.treadmill.ui.hasBlePermissions
 import com.custom.treadmill.ui.requiredBlePermissions
 import com.custom.treadmill.ui.viewmodels.MainViewModel
@@ -50,7 +49,6 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val settings by vm.settings.collectAsState()
     val paused by vm.isPaused.collectAsState()
 
-    // Свои метрики, не belt'овские
     val elapsedSec by vm.uiElapsedSec.collectAsState()
     val distanceKm by vm.uiDistanceKm.collectAsState()
     val calories by vm.uiCalories.collectAsState()
@@ -386,7 +384,7 @@ private fun ControlTile(
                 horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.padding(vertical = 1.dp)
             ) {
-                RollingText(
+                Text(
                     text = value,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
@@ -451,7 +449,7 @@ private fun MetricBlock(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.Center
         ) {
-            RollingText(
+            Text(
                 text = value,
                 fontSize = 19.sp,
                 fontWeight = FontWeight.SemiBold
