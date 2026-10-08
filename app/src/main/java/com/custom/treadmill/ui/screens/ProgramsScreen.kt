@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.database.ProgramEntity
 import com.custom.treadmill.data.database.ProgramSegment
@@ -79,12 +80,16 @@ fun ProgramsScreen(
 ) {
     val ctx = LocalContext.current
     val programs by programVm.programs.collectAsState()
+    val treadmillState by mainVm.treadmillState.collectAsState()
+
+    val treadmillReady = treadmillState == BleConnectionState.READY
 
     var editingId by remember { mutableStateOf(-1L) }
     var editingData by remember { mutableStateOf<ProgramData?>(null) }
     var showTemplates by remember { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var sortMode by rememberSaveable { mutableStateOf(SortMode.NAME_ASC) }
+    var showNotConnectedDialog by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -124,16 +129,6 @@ fun ProgramsScreen(
             SortMode.NAME_DESC -> filtered.sortedByDescending { it.name.lowercase() }
             SortMode.NEWEST -> filtered.sortedByDescending { it.id }
         }
-    }
-
-    // Группировка по префиксу — только если программ >= 4 и групп >= 2
-    val grouped: List<Pair<String, List<ProgramEntity>>>? = remember(visible) {
-        if (visible.size < 4) return@remember null
-        val byPrefix = visible.groupBy { groupKey(it.name) }
-        if (byPrefix.size < 2) return@remember null
-        byPrefix.entries
-            .sortedBy { if (it.key == "Другое") "яяя" else it.key.lowercase() }
-            .map { it.key to it.value }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -234,55 +229,30 @@ fun ProgramsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 20.dp)
             ) {
-                if (grouped != null) {
-                    grouped.forEach { (prefix, list) ->
-                        item(key = "header_$prefix") {
-                            Text(
-                                prefix,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
-                            )
+                items(visible, key = { it.id }) { p ->
+                    val data = remember(p.id, p.segmentsJson) { programVm.toData(p) }
+                    ProgramCard(
+                        entity = p,
+                        data = data,
+                        canStart = treadmillReady,
+                        onEdit = { editingId = p.id; editingData = data },
+                        onDuplicate = {
+                            val copy = data.copy(name = "${data.name} (копия)")
+                            programVm.save(copy, 0L)
+                        },
+                        onDelete = { programVm.delete(p) },
+                        onExport = {
+                            editingData = data
+                            exportLauncher.launch("${p.name}.json")
+                        },
+                        onStart = {
+                            if (treadmillReady) {
+                                onStartWorkout(data)
+                            } else {
+                                showNotConnectedDialog = true
+                            }
                         }
-                        items(list, key = { it.id }) { p ->
-                            val data = remember(p.id, p.segmentsJson) { programVm.toData(p) }
-                            ProgramCard(
-                                entity = p,
-                                data = data,
-                                onEdit = { editingId = p.id; editingData = data },
-                                onDuplicate = {
-                                    val copy = data.copy(name = "${data.name} (копия)")
-                                    programVm.save(copy, 0L)
-                                },
-                                onDelete = { programVm.delete(p) },
-                                onExport = {
-                                    editingData = data
-                                    exportLauncher.launch("${p.name}.json")
-                                },
-                                onStart = { onStartWorkout(data) }
-                            )
-                        }
-                    }
-                } else {
-                    items(visible, key = { it.id }) { p ->
-                        val data = remember(p.id, p.segmentsJson) { programVm.toData(p) }
-                        ProgramCard(
-                            entity = p,
-                            data = data,
-                            onEdit = { editingId = p.id; editingData = data },
-                            onDuplicate = {
-                                val copy = data.copy(name = "${data.name} (копия)")
-                                programVm.save(copy, 0L)
-                            },
-                            onDelete = { programVm.delete(p) },
-                            onExport = {
-                                editingData = data
-                                exportLauncher.launch("${p.name}.json")
-                            },
-                            onStart = { onStartWorkout(data) }
-                        )
-                    }
+                    )
                 }
             }
         }
@@ -308,6 +278,17 @@ fun ProgramsScreen(
         )
     }
 
+    if (showNotConnectedDialog) {
+        AlertDialog(
+            onDismissRequest = { showNotConnectedDialog = false },
+            title = { Text("Дорожка не подключена") },
+            text = { Text("Подключите дорожку на главном экране, затем вернитесь и запустите программу.") },
+            confirmButton = {
+                TextButton(onClick = { showNotConnectedDialog = false }) { Text("OK") }
+            }
+        )
+    }
+
     editingData?.let { data ->
         val isNew = editingId == 0L
         ProgramEditorScreen(
@@ -324,30 +305,6 @@ fun ProgramsScreen(
             }
         )
     }
-}
-
-/**
- * Ключ группировки для программы.
- *
- * Берёт текст до разделителя `·` `—` `–` `:` или до первого пробела.
- * Например: "Н1 · Че · Темп 3×6 мин @ 12.8" → "Н1".
- * Если разделителей нет — "Другое".
- */
-private fun groupKey(name: String): String {
-    val trimmed = name.trim()
-    if (trimmed.isEmpty()) return "Другое"
-
-    val idxDelim = trimmed.indexOfFirst { it == '·' || it == '—' || it == '–' || it == ':' }
-    if (idxDelim in 1..20) {
-        val key = trimmed.substring(0, idxDelim).trim()
-        if (key.isNotBlank()) return key
-    }
-    val idxSpace = trimmed.indexOf(' ')
-    if (idxSpace in 1..15) {
-        val key = trimmed.substring(0, idxSpace).trim()
-        if (key.isNotBlank()) return key
-    }
-    return "Другое"
 }
 
 @Composable
@@ -491,6 +448,7 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
 private fun ProgramCard(
     entity: ProgramEntity,
     data: ProgramData,
+    canStart: Boolean,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
@@ -540,10 +498,15 @@ private fun ProgramCard(
 
             Button(
                 onClick = onStart,
+                enabled = canStart,
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(vertical = 12.dp)
             ) {
-                Text("Старт", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Text(
+                    if (canStart) "Старт" else "Дорожка не подключена",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                )
             }
 
             Spacer(Modifier.height(8.dp))
