@@ -2,44 +2,27 @@ package com.custom.treadmill.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +35,7 @@ import com.custom.treadmill.data.database.ProgramEntity
 import com.custom.treadmill.data.database.ProgramSegment
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import com.custom.treadmill.ui.viewmodels.ProgramViewModel
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 enum class SortMode { NAME_ASC, NAME_DESC, NEWEST }
@@ -578,7 +562,7 @@ private fun ProgramEditorScreen(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { 
+                        title = {
                             Column {
                                 Text(if (isNew) "Новая программа" else "Редактор", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                 Text("Всего: ${segments.sumOf { it.durationSec } / 60} мин", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -596,8 +580,8 @@ private fun ProgramEditorScreen(
                                     ProgramData(
                                         name = name.ifBlank { "Без названия" },
                                         description = description,
-                                        segments = segments.map { 
-                                            ProgramSegment(it.durationSec, it.speedKmh, it.inclinePercent, it.name.ifBlank { "Сегмент" }) 
+                                        segments = segments.map {
+                                            ProgramSegment(it.durationSec, it.speedKmh, it.inclinePercent, it.name.ifBlank { "Сегмент" })
                                         }
                                     )
                                 )
@@ -654,7 +638,7 @@ private fun ProgramEditorScreen(
                     )
 
                     Spacer(Modifier.height(12.dp))
-                    
+
                     LazyColumn(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -706,6 +690,10 @@ private fun SegmentEditor(
     onDelete: () -> Unit,
     canDelete: Boolean
 ) {
+    var showTimePicker by remember { mutableStateOf(false) }
+    var showSpeedPicker by remember { mutableStateOf(false) }
+    var showInclinePicker by remember { mutableStateOf(false) }
+
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
@@ -750,126 +738,243 @@ private fun SegmentEditor(
             )
             Spacer(Modifier.height(10.dp))
 
-            // Новый интерактивный UI для значений
+            // Кнопки-поля, при нажатии на которые открывается колесо выбора
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Время (в секундах)
-                DragValuePicker(
+                ValueButton(
                     label = "Время",
-                    valueText = if (seg.durationSec >= 60) "${seg.durationSec / 60}м ${seg.durationSec % 60}с" else "${seg.durationSec}с",
+                    value = if (seg.durationSec >= 60) "${seg.durationSec / 60}м ${seg.durationSec % 60}с" else "${seg.durationSec}с",
                     modifier = Modifier.weight(1f),
-                    onValueChange = { isUp ->
-                        val step = if (isUp) 10 else -10
-                        val newV = (seg.durationSec + step).coerceIn(10, 3600)
-                        onChange(seg.copy(durationSec = newV))
-                    }
+                    onClick = { showTimePicker = true }
                 )
-                // Скорость
-                DragValuePicker(
+                ValueButton(
                     label = "Скорость",
-                    valueText = "%.1f".format(seg.speedKmh),
+                    value = "%.1f".format(seg.speedKmh),
                     modifier = Modifier.weight(1f),
-                    onValueChange = { isUp ->
-                        val step = if (isUp) 0.1 else -0.1
-                        val newV = (seg.speedKmh + step).coerceIn(1.0, 20.0)
-                        onChange(seg.copy(speedKmh = (newV * 10).roundToInt() / 10.0))
-                    }
+                    onClick = { showSpeedPicker = true }
                 )
-                // Наклон
-                DragValuePicker(
+                ValueButton(
                     label = "Наклон %",
-                    valueText = "${seg.inclinePercent.roundToInt()}",
+                    value = "${seg.inclinePercent.roundToInt()}",
                     modifier = Modifier.weight(1f),
-                    onValueChange = { isUp ->
-                        val step = if (isUp) 1.0 else -1.0
-                        val newV = (seg.inclinePercent + step).coerceIn(0.0, 15.0)
-                        onChange(seg.copy(inclinePercent = newV))
-                    }
+                    onClick = { showInclinePicker = true }
                 )
             }
         }
     }
+
+    // --- Диалоги с колесами ---
+
+    if (showTimePicker) {
+        TimePickerDialog(
+            initialSec = seg.durationSec,
+            onConfirm = {
+                onChange(seg.copy(durationSec = it))
+                showTimePicker = false
+            },
+            onDismiss = { showTimePicker = false }
+        )
+    }
+
+    if (showSpeedPicker) {
+        val speedItems = remember { (10..200).map { it / 10.0 } } // от 1.0 до 20.0
+        WheelPickerDialog(
+            title = "Скорость",
+            items = speedItems.map { "%.1f км/ч".format(it) },
+            initialIndex = (seg.speedKmh * 10 - 10).roundToInt().coerceIn(0, 190),
+            onConfirm = { idx ->
+                onChange(seg.copy(speedKmh = speedItems[idx]))
+                showSpeedPicker = false
+            },
+            onDismiss = { showSpeedPicker = false }
+        )
+    }
+
+    if (showInclinePicker) {
+        val inclineItems = remember { (0..15).toList() }
+        WheelPickerDialog(
+            title = "Наклон",
+            items = inclineItems.map { "$it %" },
+            initialIndex = seg.inclinePercent.roundToInt().coerceIn(0, 15),
+            onConfirm = { idx ->
+                onChange(seg.copy(inclinePercent = inclineItems[idx].toDouble()))
+                showInclinePicker = false
+            },
+            onDismiss = { showInclinePicker = false }
+        )
+    }
 }
 
-/**
- * Компонент для изменения значения свайпом вверх/вниз или кнопками.
- * Заменяет скучные текстовые поля.
- */
 @Composable
-private fun DragValuePicker(
+private fun ValueButton(
     label: String,
-    valueText: String,
+    value: String,
     modifier: Modifier = Modifier,
-    onValueChange: (Boolean) -> Unit
+    onClick: () -> Unit
 ) {
-    var dragAccumulator by remember { mutableFloatStateOf(0f) }
-
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 1.dp,
+        onClick = onClick,
+        modifier = modifier.height(60.dp)
     ) {
-        Text(
-            label,
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(4.dp))
-        
-        // Само поле, которое можно тянуть
+        Column(
+            Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+// --- Компоненты выбора как в календаре ---
+
+@Composable
+private fun TimePickerDialog(
+    initialSec: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var mins by remember { mutableIntStateOf(initialSec / 60) }
+    var secs by remember { mutableIntStateOf(initialSec % 60) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Длительность", fontWeight = FontWeight.Bold) },
+        text = {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                WheelPicker(
+                    items = (0..120).map { "$it м" },
+                    initialIndex = mins,
+                    modifier = Modifier.weight(1f),
+                    onItemSelected = { mins = it }
+                )
+                WheelPicker(
+                    items = (0..59).map { "$it с" },
+                    initialIndex = secs,
+                    modifier = Modifier.weight(1f),
+                    onItemSelected = { secs = it }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val total = (mins * 60 + secs).coerceAtLeast(1)
+                onConfirm(total)
+            }) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
+
+@Composable
+private fun WheelPickerDialog(
+    title: String,
+    items: List<String>,
+    initialIndex: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedIndex by remember { mutableIntStateOf(initialIndex) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, fontWeight = FontWeight.Bold) },
+        text = {
+            WheelPicker(
+                items = items,
+                initialIndex = initialIndex,
+                onItemSelected = { selectedIndex = it }
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selectedIndex) }) { Text("OK") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
+}
+
+@Composable
+private fun WheelPicker(
+    items: List<String>,
+    initialIndex: Int,
+    modifier: Modifier = Modifier,
+    onItemSelected: (Int) -> Unit
+) {
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+    )
+    val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
+
+    // Текущий выбранный элемент — это тот, что прилип к верху (с учетом отступа)
+    val selectedIndex by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+        }
+    }
+
+    LaunchedEffect(selectedIndex) {
+        onItemSelected(selectedIndex)
+    }
+
+    Box(
+        modifier = modifier.height(150.dp).fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        // Рамка-подсветка по центру
         Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 1.dp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(80.dp)
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onDragEnd = { dragAccumulator = 0f },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            dragAccumulator += dragAmount
-                            // Каждые 20 пикселей свайпа меняем значение на 1 шаг
-                            if (dragAccumulator > 20f) {
-                                onValueChange(false) // свайп вниз (уменьшение)
-                                dragAccumulator = 0f
-                            } else if (dragAccumulator < -20f) {
-                                onValueChange(true) // свайп вверх (увеличение)
-                                dragAccumulator = 0f
-                            }
-                        }
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(40.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(8.dp)
+        ) {}
+
+        LazyColumn(
+            state = listState,
+            flingBehavior = flingBehavior,
+            // Padding сверху и снизу, чтобы первый элемент оказался ровно по центру
+            contentPadding = PaddingValues(vertical = 55.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            itemsIndexed(items) { index, item ->
+                val isSelected = index == selectedIndex
+                // Плавное затухание и уменьшение отдаленных элементов
+                val distance = abs(index - selectedIndex)
+                val alpha = when (distance) {
+                    0 -> 1f
+                    1 -> 0.4f
+                    else -> 0.15f
+                }
+                val scale = when (distance) {
+                    0 -> 1f
+                    1 -> 0.85f
+                    else -> 0.7f
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .alpha(alpha)
+                        .scale(scale),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = item,
+                        fontSize = if (isSelected) 22.sp else 18.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-        ) {
-            Column(
-                Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Кнопка вверх (визуальная подсказка)
-                Icon(
-                    Icons.Default.ArrowUpward,
-                    contentDescription = "Увеличить",
-                    modifier = Modifier.size(16.dp).padding(bottom = 2.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                )
-                
-                Text(
-                    valueText,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                
-                // Кнопка вниз
-                Icon(
-                    Icons.Default.ArrowDownward,
-                    contentDescription = "Уменьшить",
-                    modifier = Modifier.size(16.dp).padding(top = 2.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                )
             }
         }
     }
