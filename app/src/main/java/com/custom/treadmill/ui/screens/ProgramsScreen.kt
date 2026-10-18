@@ -2,8 +2,7 @@ package com.custom.treadmill.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,7 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -699,7 +697,6 @@ private fun SegmentEditor(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
         Column(Modifier.padding(10.dp)) {
-            // Шапка карточки сегмента
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -738,7 +735,6 @@ private fun SegmentEditor(
             )
             Spacer(Modifier.height(10.dp))
 
-            // Кнопки-поля, при нажатии на которые открывается колесо выбора
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -764,8 +760,6 @@ private fun SegmentEditor(
             }
         }
     }
-
-    // --- Диалоги с колесами ---
 
     if (showTimePicker) {
         TimePickerDialog(
@@ -831,8 +825,6 @@ private fun ValueButton(
         }
     }
 }
-
-// --- Компоненты выбора как в календаре ---
 
 @Composable
 private fun TimePickerDialog(
@@ -904,6 +896,7 @@ private fun WheelPickerDialog(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WheelPicker(
     items: List<String>,
@@ -916,7 +909,6 @@ private fun WheelPicker(
     )
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
 
-    // Текущий выбранный элемент — это тот, что прилип к верху (с учетом отступа)
     val selectedIndex by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
@@ -931,7 +923,6 @@ private fun WheelPicker(
         modifier = modifier.height(150.dp).fillMaxWidth(),
         contentAlignment = Alignment.Center
     ) {
-        // Рамка-подсветка по центру
         Surface(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(40.dp),
             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
@@ -941,13 +932,11 @@ private fun WheelPicker(
         LazyColumn(
             state = listState,
             flingBehavior = flingBehavior,
-            // Padding сверху и снизу, чтобы первый элемент оказался ровно по центру
             contentPadding = PaddingValues(vertical = 55.dp),
             modifier = Modifier.fillMaxSize()
         ) {
             itemsIndexed(items) { index, item ->
                 val isSelected = index == selectedIndex
-                // Плавное затухание и уменьшение отдаленных элементов
                 val distance = abs(index - selectedIndex)
                 val alpha = when (distance) {
                     0 -> 1f
