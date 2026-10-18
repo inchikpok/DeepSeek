@@ -1,6 +1,8 @@
 package com.custom.treadmill.ui.screens
 
+import android.app.Activity
 import android.bluetooth.le.ScanResult
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -16,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,6 +42,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
 
     val treadmillState by vm.treadmillState.collectAsState()
     val treadmillName by vm.treadmillName.collectAsState()
+    val treadmillData by vm.treadmillData.collectAsState()
     val hrState by vm.hrState.collectAsState()
     val hrName by vm.hrName.collectAsState()
     val targetSpeed by vm.targetSpeed.collectAsState()
@@ -56,6 +60,21 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
 
     val treadmillReady = treadmillState == BleConnectionState.READY
     val speedStep = settings.speedStepKmh
+
+    // Не гасим экран на главном, если belt едет или на паузе (это тренировка).
+    val keepScreenOn = settings.keepScreenOn && (treadmillData.isRunning || paused)
+    val view = LocalView.current
+    DisposableEffect(keepScreenOn) {
+        val window = (view.context as? Activity)?.window
+        if (keepScreenOn) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     var permsGranted by remember { mutableStateOf(hasBlePermissions(ctx)) }
     val permLauncher = rememberLauncherForActivityResult(
