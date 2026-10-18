@@ -547,7 +547,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun addLog(line: String) {
         val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
             .format(java.util.Date())
-        _logs.value = (_logs.value + "[$ts] $line").takeLast(500)
+        _logs.value = (_logs.value + "[$ts] $line").takeLast(8000)
     }
 
     fun clearLogs() { _logs.value = emptyList() }
