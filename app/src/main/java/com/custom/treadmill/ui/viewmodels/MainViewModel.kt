@@ -64,6 +64,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var lastSpeedCmdTime = 0L
     private var lastInclineCmdTime = 0L
 
+    /**
+     * Флаг блокирует обновление _targetSpeed из коллектора _treadmillData
+     * пока идёт запуск belt'а (startTreadmill / resumeWorkout).
+     *
+     * Иначе: belt стартует с 1.0 км/ч, notify приходит, lastSpeedCmdTime
+     * устарел → коллектор обнуляет _targetSpeed. При резюме после паузы
+     * восстановленная скорость теряется (баг B6).
+     */
+    private var isStartingBelt = false
+
     private val _heartRate = MutableStateFlow(0)
     val heartRate: StateFlow<Int> = _heartRate.asStateFlow()
 
@@ -137,7 +147,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (d.speedKmh > 0.05) { speedSum += d.speedKmh; speedCount++ }
 
                 val now = System.currentTimeMillis()
-                if (now - lastSpeedCmdTime > 3500 && abs(_targetSpeed.value - d.speedKmh) > 0.1) {
+                // НЕ трогаем _targetSpeed пока идёт запуск belt'а (startTreadmill / resumeWorkout).
+                // Иначе стартовые 1.0 км/ч обнулят сохранённую скорость паузы.
+                if (!isStartingBelt &&
+                    now - lastSpeedCmdTime > 3500 &&
+                    abs(_targetSpeed.value - d.speedKmh) > 0.1
+                ) {
                     _targetSpeed.value = d.speedKmh
                 }
                 if (now - lastInclineCmdTime > 3500 && abs(_targetIncline.value - d.inclinePercent) > 0.4) {
@@ -260,6 +275,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _targetIncline.value = 0.0
         _treadmillName.value = null
         _isPaused.value = false
+        speedBeforePause = 0.0
     }
 
     fun connectHeartRate(device: BluetoothDevice) {
@@ -354,10 +370,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Старт вручную (главный экран).
      *
-     * После того как belt реально поехал (waitForBeltRunning), синхронизируем
-     * ему текущие значения скорости и наклона из UI. До старта эти значения
-     * могли быть нажаты, но не отправлены (FTMSProtocol.setSpeed/setIncline
-     * молчат, пока belt стоит, чтобы не пищал).
+     * Если isPaused==true (это резюме после паузы) — восстанавливаем
+     * сохранённую скорость speedBeforePause и после того, как belt
+     * реально поехал, отправляем её на belt.
+     *
+     * isStartingBelt защищает _targetSpeed от перезаписи коллектором
+     * пока belt отсчитывает 3-2-1 и едет с 1.0 км/ч — иначе сохранённая
+     * скорость паузы потеряется (баг B6).
      */
     fun startTreadmill() {
         if (!isTreadmillReady()) {
@@ -366,24 +385,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         val isResume = _isPaused.value
         if (!isResume) resetMetrics()
+        val resumeSpeed = if (isResume) speedBeforePause else 0.0
+
+        // Восстанавливаем UI-скорость немедленно, чтобы пользователь видел
+        // актуальное значение пока belt отсчитывает 3-2-1.
+        if (isResume && resumeSpeed > 0.5) {
+            _targetSpeed.value = resumeSpeed
+        }
+
         _isPaused.value = false
+        isStartingBelt = true
 
         viewModelScope.launch {
-            protocol?.start()
-            if (!waitForBeltRunning(0.9, 30000L)) {
-                _statusMessage.value =
-                    "Дорожка не отвечает. Нажмите любую кнопку на дорожке и попробуйте снова."
-                return@launch
-            }
+            try {
+                protocol?.start()
+                if (!waitForBeltRunning(0.9, 30000L)) {
+                    _statusMessage.value =
+                        "Дорожка не отвечает. Нажмите любую кнопку на дорожке и попробуйте снова."
+                    return@launch
+                }
 
-            // Belt реально едет — синхронизируем UI с belt'ом
-            val targetSpeedLocal = _targetSpeed.value
-            if (targetSpeedLocal > 1.0) {
-                protocol?.setSpeed(targetSpeedLocal)
-            }
-            val targetInclineLocal = _targetIncline.value
-            if (targetInclineLocal > 0.0) {
-                protocol?.setIncline(targetInclineLocal)
+                // Belt реально едет. Восстанавливаем скорость после паузы
+                // или синхронизируем с UI при обычном старте.
+                if (resumeSpeed > 1.0) {
+                    protocol?.setSpeed(resumeSpeed)
+                } else {
+                    val targetSpeedLocal = _targetSpeed.value
+                    if (targetSpeedLocal > 1.0) {
+                        protocol?.setSpeed(targetSpeedLocal)
+                    }
+                }
+                val targetInclineLocal = _targetIncline.value
+                if (targetInclineLocal > 0.0) {
+                    protocol?.setIncline(targetInclineLocal)
+                }
+            } finally {
+                isStartingBelt = false
             }
         }
     }
@@ -391,10 +428,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun pauseTreadmill() {
         if (!isTreadmillReady()) return
         if (_isPaused.value) return
+        // Запоминаем текущую целевую скорость. Если _targetSpeed уже 0
+        // (долго стояли) — берём минимум 1.0 км/ч.
         speedBeforePause = _targetSpeed.value.coerceAtLeast(1.0)
         _isPaused.value = true
         viewModelScope.launch { protocol?.stop() }
-        _statusMessage.value = "Пауза (${speedBeforePause} км/ч сохранено)"
+        _statusMessage.value = "Пауза (%.1f км/ч сохранено)".format(speedBeforePause)
     }
 
     fun togglePauseTreadmill() {
@@ -472,26 +511,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         resetMetrics()
         workoutLogSaved = false
         _isPaused.value = false
+        speedBeforePause = 0.0
 
+        isStartingBelt = true
         viewModelScope.launch {
-            protocol?.start()
-            if (!waitForBeltRunning(0.9, 30000L)) {
-                _statusMessage.value =
-                    "Дорожка не отвечает. Нажмите любую кнопку на дорожке и запустите снова."
-                return@launch
-            }
-            workoutManager.start(
-                scope = viewModelScope, program = program,
-                onSetSpeed = { setSpeed(it) },
-                onSetIncline = { setIncline(it) },
-                onFinish = {
-                    // Программа закончилась — останавливаем belt.
-                    // Иначе он продолжит идти с последней скоростью.
-                    protocol?.stop()
-                    _isPaused.value = false
-                    speedBeforePause = 0.0
+            try {
+                protocol?.start()
+                if (!waitForBeltRunning(0.9, 30000L)) {
+                    _statusMessage.value =
+                        "Дорожка не отвечает. Нажмите любую кнопку на дорожке и запустите снова."
+                    return@launch
                 }
-            )
+                workoutManager.start(
+                    scope = viewModelScope, program = program,
+                    onSetSpeed = { setSpeed(it) },
+                    onSetIncline = { setIncline(it) },
+                    onFinish = {
+                        // Программа закончилась — останавливаем belt.
+                        // Иначе он продолжит идти с последней скоростью.
+                        protocol?.stop()
+                        _isPaused.value = false
+                        speedBeforePause = 0.0
+                    }
+                )
+            } finally {
+                isStartingBelt = false
+            }
         }
     }
 
@@ -510,14 +555,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _statusMessage.value = "Дорожка не подключена — не могу продолжить"
             return
         }
+        isStartingBelt = true
         viewModelScope.launch {
-            protocol?.start()
-            if (!waitForBeltRunning(0.9, 30000L)) {
-                _statusMessage.value =
-                    "Дорожка не отвечает. Нажмите кнопку на дорожке и продолжите снова."
-                return@launch
+            try {
+                protocol?.start()
+                if (!waitForBeltRunning(0.9, 30000L)) {
+                    _statusMessage.value =
+                        "Дорожка не отвечает. Нажмите кнопку на дорожке и продолжите снова."
+                    return@launch
+                }
+                // launchLoop отправит скорость/наклон текущего сегмента
+                // через onSetSpeed / onSetIncline — нам ничего вручную не нужно.
+                workoutManager.resume()
+            } finally {
+                isStartingBelt = false
             }
-            workoutManager.resume()
         }
     }
 
