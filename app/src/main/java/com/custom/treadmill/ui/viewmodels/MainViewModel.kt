@@ -152,6 +152,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ================================================================
     //  СВОЙ счётчик метрик тренировки
     // ================================================================
+    //
+    // Belt ведёт elapsed с момента своего включения, не с начала
+    // тренировки, и продолжает его считать даже когда belt стоит.
+    // Поэтому держим свой счётчик, который растёт ТОЛЬКО когда belt
+    // реально едет быстрее 0.3 км/ч.
 
     private fun startMetricsLoop() {
         if (metricsJob?.isActive == true) return
@@ -164,6 +169,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
                 _uiElapsedSec.value += 1
                 _uiDistanceKm.value += speed / 3600.0
+                // Оценка: ≈60 ккал на км (среднее для бега на дорожке)
                 _uiCalories.value = (_uiDistanceKm.value * 60).toInt()
             }
         }
@@ -313,11 +319,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { protocol?.setIncline(safe) }
     }
 
-    /**
-     * Ожидание старта belt'а.
-     * Belt на этой прошивке стартует с задержкой 10-30 сек.
-     * Каждые 4 секунды повторяем `07`, пока belt не поедет.
-     */
+    // ================================================================
+    //  ЖДЁМ СТАРТА BELT'А
+    // ================================================================
+    //
+    // Belt стартует с задержкой 10-30 сек. Каждые 4 сек повторяем 07.
+
     private suspend fun waitForBeltRunning(
         minSpeedKmh: Double = 0.9,
         timeoutMs: Long = 30000L
@@ -340,14 +347,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return false
     }
 
+    // ================================================================
+    //  РУЧНОЕ УПРАВЛЕНИЕ
+    // ================================================================
+
+    /**
+     * Старт вручную (главный экран).
+     *
+     * После того как belt реально поехал (waitForBeltRunning), синхронизируем
+     * ему текущие значения скорости и наклона из UI. До старта эти значения
+     * могли быть нажаты, но не отправлены (FTMSProtocol.setSpeed/setIncline
+     * молчат, пока belt стоит, чтобы не пищал).
+     */
     fun startTreadmill() {
         if (!isTreadmillReady()) {
             _statusMessage.value = "Сначала подключите дорожку"
             return
         }
         val isResume = _isPaused.value
-        val restore = if (isResume && speedBeforePause > 0.5) speedBeforePause else null
-
         if (!isResume) resetMetrics()
         _isPaused.value = false
 
@@ -358,8 +375,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     "Дорожка не отвечает. Нажмите любую кнопку на дорожке и попробуйте снова."
                 return@launch
             }
-            if (restore != null && restore > 1.0) {
-                protocol?.setSpeed(restore)
+
+            // Belt реально едет — синхронизируем UI с belt'ом
+            val targetSpeedLocal = _targetSpeed.value
+            if (targetSpeedLocal > 1.0) {
+                protocol?.setSpeed(targetSpeedLocal)
+            }
+            val targetInclineLocal = _targetIncline.value
+            if (targetInclineLocal > 0.0) {
+                protocol?.setIncline(targetInclineLocal)
             }
         }
     }
@@ -377,6 +401,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (_isPaused.value) startTreadmill() else pauseTreadmill()
     }
 
+    /**
+     * Стоп на главном экране.
+     * Если идёт тренировка по программе — завершает и её (сохраняет лог).
+     */
     fun stopTreadmill() {
         if (!isTreadmillReady()) return
 
@@ -398,6 +426,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             addLog("Ошибка отправки hex: ${e.message}"); false
         }
     }
+
+    // ================================================================
+    //  АВТОПУЛЬС
+    // ================================================================
 
     fun setAutoHrEnabled(enabled: Boolean) {
         settingsStore.update { it.copy(hrEnabled = enabled) }
@@ -451,7 +483,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             workoutManager.start(
                 scope = viewModelScope, program = program,
                 onSetSpeed = { setSpeed(it) },
-                onSetIncline = { setIncline(it) }
+                onSetIncline = { setIncline(it) },
+                onFinish = {
+                    // Программа закончилась — останавливаем belt.
+                    // Иначе он продолжит идти с последней скоростью.
+                    protocol?.stop()
+                    _isPaused.value = false
+                    speedBeforePause = 0.0
+                }
             )
         }
     }
@@ -490,14 +529,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Пропустить текущий сегмент — сразу перейти к следующему.
-     */
     fun skipWorkoutSegment() {
         if (!workoutManager.state.value.running) return
         workoutManager.skipCurrentSegment()
     }
 
+    /**
+     * Остановить тренировку + belt. Сохранить лог.
+     * Вызывается кнопкой «Стоп» в WorkoutScreen и «Стоп» на главном,
+     * когда идёт программа.
+     */
     fun stopWorkout() {
         saveWorkoutLog()
         workoutManager.stop()
@@ -540,6 +581,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         resetStats()
     }
 
+    // ================================================================
+    //  НАСТРОЙКИ И ЛОГИ
+    // ================================================================
+
     fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.update(transform)
     fun setProtocolType(type: ProtocolType) { settingsStore.update { it.copy(protocol = type) } }
     fun setHrMode(mode: HrMode) { settingsStore.update { it.copy(hrMode = mode) } }
@@ -547,7 +592,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun addLog(line: String) {
         val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
             .format(java.util.Date())
-        _logs.value = (_logs.value + "[$ts] $line").takeLast(8000)
+        _logs.value = (_logs.value + "[$ts] $line").takeLast(500)
     }
 
     fun clearLogs() { _logs.value = emptyList() }
