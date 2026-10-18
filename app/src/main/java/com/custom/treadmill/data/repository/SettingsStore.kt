@@ -23,7 +23,6 @@ data class AppSettings(
     val minSpeedKmh: Double = 1.0,
     val maxSpeedKmh: Double = 20.0,
     val maxInclinePercent: Double = 15.0,
-    val inclineStep: Double = 1.0,
     val hrEnabled: Boolean = false,
     val hrMode: HrMode = HrMode.TARGET,
     val targetHr: Int = 130,
