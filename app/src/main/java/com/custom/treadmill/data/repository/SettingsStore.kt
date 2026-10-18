@@ -20,6 +20,13 @@ data class AppSettings(
 
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
 
+    /**
+     * Не гасить экран. На экране тренировки включено всегда
+     * (пользователь смотрит на метрики), а на главном — только когда
+     * belt едет или на паузе (иначе разряжает батарею).
+     */
+    val keepScreenOn: Boolean = true,
+
     val minSpeedKmh: Double = 1.0,
     val maxSpeedKmh: Double = 20.0,
     val maxInclinePercent: Double = 15.0,
