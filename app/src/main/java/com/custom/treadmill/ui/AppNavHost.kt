@@ -7,10 +7,13 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -62,7 +65,13 @@ fun AppNavHost() {
                 onOpenAbout = { nav.navigate(Routes.ABOUT) }
             )
         }
-        composable(Routes.WORKOUT) { WorkoutScreen(vm = mainVm, onBack = { nav.popBackStack() }) }
+        composable(Routes.WORKOUT) {
+            WorkoutScreen(
+                vm = mainVm,
+                onBack = { nav.popBackStack() },
+                onOpenDebug = { nav.navigate(Routes.DEBUG) }
+            )
+        }
         composable(Routes.DEBUG) { DebugScreen(vm = mainVm, onBack = { nav.popBackStack() }) }
         composable(Routes.ABOUT) { AboutScreen(onBack = { nav.popBackStack() }) }
     }
@@ -99,6 +108,15 @@ private fun MainTabs(
                         label = { Text(tab.title, fontSize = 11.sp) }
                     )
                 }
+            }
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = onOpenDebug,
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+            ) {
+                Icon(Icons.Default.BugReport, contentDescription = "Debug")
             }
         }
     ) { padding ->
