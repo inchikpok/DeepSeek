@@ -3,6 +3,7 @@ package com.custom.treadmill.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,7 +24,11 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 @Composable
-fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun WorkoutScreen(
+    vm: MainViewModel,
+    onBack: () -> Unit,
+    onOpenDebug: () -> Unit = {}
+) {
     val ws by vm.workoutState.collectAsState()
     val targetSpeed by vm.targetSpeed.collectAsState()
     val targetIncline by vm.targetIncline.collectAsState()
@@ -74,7 +79,13 @@ fun WorkoutScreen(vm: MainViewModel, onBack: () -> Unit) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(Modifier.width(60.dp))
+                IconButton(onClick = onOpenDebug) {
+                    Icon(
+                        Icons.Default.BugReport,
+                        contentDescription = "Debug",
+                        tint = MaterialTheme.colorScheme.tertiary
+                    )
+                }
             }
 
             Spacer(Modifier.height(6.dp))
