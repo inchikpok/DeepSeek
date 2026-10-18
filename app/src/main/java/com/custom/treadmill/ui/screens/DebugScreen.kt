@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,11 +72,19 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     var hexInput by rememberSaveable { mutableStateOf("02 96 00") }
     var savedMessage by remember { mutableStateOf<String?>(null) }
     var tab by rememberSaveable { mutableStateOf(0) }
+    /** Скрывать служебные кадры Treadmill Data (2ACD) — 95% объёма лога. */
+    var hideTreadmillFrames by rememberSaveable { mutableStateOf(true) }
 
     val listState = rememberLazyListState()
 
-    LaunchedEffect(logs.size) {
-        if (tab == 0 && logs.isNotEmpty() && listState.firstVisibleItemIndex <= 1) {
+    // Отфильтрованный список для отображения в UI
+    val visibleLogs = remember(logs, hideTreadmillFrames) {
+        if (hideTreadmillFrames) logs.filter { !it.contains("<- 00002acd") }
+        else logs
+    }
+
+    LaunchedEffect(visibleLogs.size) {
+        if (tab == 0 && visibleLogs.isNotEmpty() && listState.firstVisibleItemIndex <= 1) {
             listState.animateScrollToItem(0)
         }
     }
@@ -85,11 +94,12 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         try {
+            // Экспортируем ПОЛНЫЙ лог (все записи, без фильтра)
             val content = buildLogContent(logs, treadmillState.toString(), settings.protocol.toString())
             ctx.contentResolver.openOutputStream(uri)?.use { os ->
                 os.write(content.toByteArray(Charsets.UTF_8))
             }
-            savedMessage = "Лог сохранён"
+            savedMessage = "Сохранено ${logs.size} записей"
         } catch (e: Exception) {
             savedMessage = "Ошибка: ${e.message}"
         }
@@ -98,6 +108,7 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().padding(12.dp)) {
 
+            // ---------- Шапка ----------
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -142,21 +153,28 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
             }
 
+            // ---------- Статус ----------
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(10.dp)) {
                     Text("Дорожка: ${treadmillName ?: "—"}", fontSize = 12.sp)
                     Text("Состояние: $treadmillState", fontSize = 12.sp)
                     Text("Протокол: ${settings.protocol}", fontSize = 12.sp)
                     Text(
-                        "Текущая скорость: %.1f км/ч".format(data.speedKmh),
+                        "Скорость: %.1f · Наклон: %.0f%%".format(
+                            data.speedKmh, data.inclinePercent
+                        ),
                         fontSize = 12.sp
                     )
-                    Text("Записей в логе: ${logs.size}", fontSize = 12.sp)
+                    Text(
+                        "Записей: ${logs.size} / 8000   (показано: ${visibleLogs.size})",
+                        fontSize = 12.sp
+                    )
                 }
             }
 
             Spacer(Modifier.height(6.dp))
 
+            // ---------- Ручной ввод hex ----------
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(10.dp)) {
                     Text("Отправить команду (hex)", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -178,17 +196,12 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                             enabled = treadmillReady
                         ) { Text("Отпр.") }
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Одна посылка = один write. Склеенные команды belt не понимает.",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
 
             Spacer(Modifier.height(6.dp))
 
+            // ---------- Табы ----------
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -200,8 +213,15 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
+            // ---------- Контент таба ----------
             when (tab) {
-                0 -> LogView(logs, listState, Modifier.weight(1f))
+                0 -> LogView(
+                    logs = visibleLogs,
+                    listState = listState,
+                    hideTreadmillFrames = hideTreadmillFrames,
+                    onToggleHide = { hideTreadmillFrames = !hideTreadmillFrames },
+                    modifier = Modifier.weight(1f)
+                )
                 1 -> CommandReference(
                     treadmillReady = treadmillReady,
                     currentSpeedKmh = data.speedKmh,
@@ -220,6 +240,10 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
         }
     }
 }
+
+// =====================================================================
+//  Вспомогательные компоненты
+// =====================================================================
 
 @Composable
 private fun TabButton(text: String, selected: Boolean, onClick: () -> Unit) {
@@ -240,11 +264,33 @@ private fun TabButton(text: String, selected: Boolean, onClick: () -> Unit) {
 private fun LogView(
     logs: List<String>,
     listState: LazyListState,
+    hideTreadmillFrames: Boolean,
+    onToggleHide: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(modifier) {
         Column(Modifier.fillMaxSize().padding(8.dp)) {
-            Text("Лог BLE", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Лог BLE",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Скрыть кадры 2ACD",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Switch(
+                        checked = hideTreadmillFrames,
+                        onCheckedChange = { onToggleHide() },
+                        modifier = Modifier.size(width = 40.dp, height = 24.dp)
+                    )
+                }
+            }
             Spacer(Modifier.height(4.dp))
             LazyColumn(
                 state = listState,
@@ -268,16 +314,16 @@ private fun LogView(
     }
 }
 
+// =====================================================================
+//  Справочник команд
+// =====================================================================
+
 private data class CmdEntry(
     val label: String,
     val hex: String,
     val note: String = ""
 )
 
-/**
- * Справочник проверенных команд для FS-E629DD.
- * Скорости включают дробные (0.5, 1.5, 2.5 …) — belt их принимает.
- */
 private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
     val speedsKmh = listOf(
         0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0,
@@ -305,7 +351,7 @@ private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
     return listOf(
         "Управление" to listOf(
             CmdEntry("Request Control", "00", "Запросить контроль"),
-            CmdEntry("Reset", "01", "Стандартный FTMS Reset (wake-up)"),
+            CmdEntry("Reset", "01", "Стандартный FTMS Reset"),
             CmdEntry("Start / Resume", "07", "Только ПОСЛЕ 00 + паузы"),
             CmdEntry("Stop (наш способ)", "02 00 00", "Скорость → 0"),
             CmdEntry("Pause (стандарт FTMS)", "08 01", "На этом belt игнорируется")
@@ -378,7 +424,7 @@ private fun CommandReference(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "От текущей скорости: %.1f км/ч".format(currentSpeedKmh),
+                        "Текущая: %.1f км/ч".format(currentSpeedKmh),
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -479,6 +525,10 @@ private fun CommandReference(
     }
 }
 
+// =====================================================================
+//  Конструктор команд
+// =====================================================================
+
 @Composable
 private fun CommandConstructor(
     treadmillReady: Boolean,
@@ -520,8 +570,7 @@ private fun CommandConstructor(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Старт с нуля требует раздельных write. Кнопка сделает всё правильно: " +
-                            "00 → пауза → 07, belt отсчитает 3-2-1 и поедет на 1.0 км/ч. " +
-                            "Затем можно задать скорость ниже.",
+                            "00 → пауза → 07, belt отсчитает 3-2-1 и поедет на 1.0 км/ч.",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -646,6 +695,10 @@ private fun CommandConstructor(
         Spacer(Modifier.height(12.dp))
     }
 }
+
+// =====================================================================
+//  Экспорт лога
+// =====================================================================
 
 private fun buildLogContent(logs: List<String>, state: String, protocol: String): String {
     val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
