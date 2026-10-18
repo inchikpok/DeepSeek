@@ -1,22 +1,39 @@
 package com.custom.treadmill.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -24,15 +41,22 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.custom.treadmill.data.repository.AppSettings
 import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.data.repository.ProtocolType
 import com.custom.treadmill.data.repository.ThemeMode
 import com.custom.treadmill.ui.viewmodels.MainViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
@@ -44,356 +68,485 @@ fun SettingsScreen(
     val settings by vm.settings.collectAsState()
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (onBack != null) {
-                TextButton(onClick = onBack) { Text("← Назад") }
-            }
-            Text("Настройки", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-
-            Spacer(Modifier.height(12.dp))
-
-            // ---------- Внешний вид ----------
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Внешний вид", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = settings.themeMode == ThemeMode.SYSTEM,
-                            onClick = { vm.updateSettings { it.copy(themeMode = ThemeMode.SYSTEM) } }
-                        )
-                        Text("Как в системе")
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onBack != null) {
+                        TextButton(onClick = onBack) { Text("← Назад") }
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = settings.themeMode == ThemeMode.LIGHT,
-                            onClick = { vm.updateSettings { it.copy(themeMode = ThemeMode.LIGHT) } }
-                        )
-                        Text("Светлая")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = settings.themeMode == ThemeMode.DARK,
-                            onClick = { vm.updateSettings { it.copy(themeMode = ThemeMode.DARK) } }
-                        )
-                        Text("Тёмная")
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // ---------- Протокол ----------
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Протокол управления", fontWeight = FontWeight.Bold)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = settings.protocol == ProtocolType.FTMS,
-                            onClick = { vm.setProtocolType(ProtocolType.FTMS) }
-                        )
-                        Text("FTMS (стандартный)")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = settings.protocol == ProtocolType.FITSHOW,
-                            onClick = { vm.setProtocolType(ProtocolType.FITSHOW) }
-                        )
-                        Text("FitShow (proprietary)")
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = settings.manualWriteUuid,
-                        onValueChange = { v -> vm.updateSettings { it.copy(manualWriteUuid = v) } },
-                        label = { Text("UUID записи (manual, опц.)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = settings.manualNotifyUuid,
-                        onValueChange = { v -> vm.updateSettings { it.copy(manualNotifyUuid = v) } },
-                        label = { Text("UUID уведомлений (manual, опц.)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
-
-                    Text("Дополнительно (FTMS)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Spacer(Modifier.height(4.dp))
                     Text(
-                        "Применяется сразу, без переподключения.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        "Настройки",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp
                     )
-                    Spacer(Modifier.height(6.dp))
+                }
+            }
 
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Команда Start (0x07)", fontSize = 14.sp)
-                            Text(
-                                "Нужна, чтобы belt тронулся с нуля. Не выключайте.",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = settings.sendStartCommand,
-                            onCheckedChange = { v ->
-                                vm.updateSettings { it.copy(sendStartCommand = v) }
+            // ================= Внешний вид =================
+            item { SectionHeader("Внешний вид") }
+            item {
+                SettingsCard {
+                    EnumDropdown(
+                        label = "Тема",
+                        current = settings.themeMode,
+                        options = ThemeMode.values().toList(),
+                        optionLabel = {
+                            when (it) {
+                                ThemeMode.SYSTEM -> "Как в системе"
+                                ThemeMode.LIGHT -> "Светлая"
+                                ThemeMode.DARK -> "Тёмная"
                             }
-                        )
-                    }
-
-                    Spacer(Modifier.height(6.dp))
-
-                    OutlinedTextField(
-                        value = settings.speedKeepAliveSec.toString(),
-                        onValueChange = { v ->
-                            val i = v.toIntOrNull() ?: return@OutlinedTextField
-                            vm.updateSettings { it.copy(speedKeepAliveSec = i) }
                         },
-                        label = { Text("Повтор команды скорости, сек") },
-                        supportingText = {
-                            Text(
-                                "0 = выключено (рекомендуется — belt сам держит скорость, " +
-                                        "а повторение вызывает писк).",
-                                fontSize = 10.sp
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                        onSelect = { v -> vm.updateSettings { it.copy(themeMode = v) } }
                     )
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            // ================= Протокол =================
+            item { SectionHeader("Протокол управления") }
+            item {
+                SettingsCard {
+                    EnumDropdown(
+                        label = "Протокол",
+                        current = settings.protocol,
+                        options = ProtocolType.values().toList(),
+                        optionLabel = {
+                            when (it) {
+                                ProtocolType.FTMS -> "FTMS (стандартный)"
+                                ProtocolType.FITSHOW -> "FitShow (proprietary)"
+                            }
+                        },
+                        onSelect = { v -> vm.setProtocolType(v) }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    SwitchRow(
+                        title = "Команда Start (0x07)",
+                        subtitle = "Не выключайте — belt не поедет",
+                        checked = settings.sendStartCommand,
+                        onChange = { v -> vm.updateSettings { it.copy(sendStartCommand = v) } }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    ExpandableAdvanced(settings, vm)
+                }
+            }
 
-            // ---------- Скорость ----------
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Ограничения скорости", fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = settings.minSpeedKmh.toString(),
+            // ================= Скорость =================
+            item { SectionHeader("Скорость") }
+            item {
+                SettingsCard {
+                    SliderSetting(
+                        label = "Минимум",
+                        value = settings.minSpeedKmh.toFloat(),
+                        valueRange = 0.5f..5.0f,
+                        steps = 8,
+                        display = { "%.1f км/ч".format(it) },
                         onValueChange = { v ->
-                            val d = v.toDoubleOrNull() ?: return@OutlinedTextField
-                            vm.updateSettings { it.copy(minSpeedKmh = d) }
-                        },
-                        label = { Text("Минимум, км/ч") },
-                        modifier = Modifier.fillMaxWidth()
+                            vm.updateSettings {
+                                it.copy(minSpeedKmh = (v * 10).roundToInt() / 10.0)
+                            }
+                        }
                     )
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = settings.maxSpeedKmh.toString(),
+                    SliderSetting(
+                        label = "Максимум",
+                        value = settings.maxSpeedKmh.toFloat(),
+                        valueRange = 5.0f..20.0f,
+                        steps = 29,
+                        display = { "%.1f км/ч".format(it) },
                         onValueChange = { v ->
-                            val d = v.toDoubleOrNull() ?: return@OutlinedTextField
-                            vm.updateSettings { it.copy(maxSpeedKmh = d) }
-                        },
-                        label = { Text("Максимум, км/ч (по умолчанию 20)") },
-                        modifier = Modifier.fillMaxWidth()
+                            vm.updateSettings {
+                                it.copy(maxSpeedKmh = (v * 10).roundToInt() / 10.0)
+                            }
+                        }
                     )
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = settings.speedStepKmh.toString(),
-                        onValueChange = { v ->
-                            val d = v.toDoubleOrNull() ?: return@OutlinedTextField
-                            vm.updateSettings { it.copy(speedStepKmh = d) }
-                        },
-                        label = { Text("Шаг кнопок +/−, км/ч") },
-                        supportingText = {
-                            Text(
-                                "По умолчанию 0.5. Можно 0.1, если belt стабильно принимает.",
-                                fontSize = 10.sp
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    EnumDropdown(
+                        label = "Шаг кнопок +/−",
+                        current = settings.speedStepKmh,
+                        options = listOf(0.1, 0.25, 0.5, 1.0),
+                        optionLabel = { "%.2f км/ч".format(it).replace(",00", "") },
+                        onSelect = { v -> vm.updateSettings { it.copy(speedStepKmh = v) } }
                     )
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-
-            // ---------- Наклон ----------
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Наклон дорожки", fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = settings.maxInclinePercent.toString(),
+            // ================= Наклон =================
+            item { SectionHeader("Наклон") }
+            item {
+                SettingsCard {
+                    SliderSetting(
+                        label = "Максимум",
+                        value = settings.maxInclinePercent.toFloat(),
+                        valueRange = 5.0f..20.0f,
+                        steps = 14,
+                        display = { "${it.roundToInt()} %" },
                         onValueChange = { v ->
-                            val d = v.toDoubleOrNull() ?: return@OutlinedTextField
-                            vm.updateSettings { it.copy(maxInclinePercent = d) }
-                        },
-                        label = { Text("Максимум, % (по умолчанию 15)") },
-                        modifier = Modifier.fillMaxWidth()
+                            vm.updateSettings {
+                                it.copy(maxInclinePercent = v.roundToInt().toDouble())
+                            }
+                        }
                     )
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = settings.inclineStep.toString(),
-                        onValueChange = { v ->
-                            val d = v.toDoubleOrNull() ?: return@OutlinedTextField
-                            vm.updateSettings { it.copy(inclineStep = d) }
-                        },
-                        label = { Text("Шаг кнопок, % (1.0 — рекомендуется)") },
-                        modifier = Modifier.fillMaxWidth()
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    EnumDropdown(
+                        label = "Шаг кнопок",
+                        current = settings.inclineStep,
+                        options = listOf(0.5, 1.0, 2.0),
+                        optionLabel = { "${it.roundToInt()} %" },
+                        onSelect = { v -> vm.updateSettings { it.copy(inclineStep = v) } }
                     )
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            // ================= Автопульс =================
+            item { SectionHeader("Автопульс") }
+            item {
+                SettingsCard {
+                    SwitchRow(
+                        title = "Авторегулировка по пульсу",
+                        subtitle = if (settings.hrEnabled) "Включена" else "Выключена",
+                        checked = settings.hrEnabled,
+                        onChange = { vm.setAutoHrEnabled(it) }
+                    )
 
-            // ---------- Авторегулировка ----------
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "Авторегулировка по пульсу",
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Switch(
-                            checked = settings.hrEnabled,
-                            onCheckedChange = { vm.setAutoHrEnabled(it) }
-                        )
-                    }
-                    HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = settings.hrMode == HrMode.TARGET,
-                            onClick = { vm.setHrMode(HrMode.TARGET) }
-                        )
-                        Text("Целевой пульс")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = settings.hrMode == HrMode.ZONE,
-                            onClick = { vm.setHrMode(HrMode.ZONE) }
-                        )
-                        Text("Зона (мин–макс)")
-                    }
-                    Spacer(Modifier.height(8.dp))
-
-                    if (settings.hrMode == HrMode.TARGET) {
-                        OutlinedTextField(
-                            value = settings.targetHr.toString(),
-                            onValueChange = { v ->
-                                val i = v.toIntOrNull() ?: return@OutlinedTextField
-                                vm.updateSettings { it.copy(targetHr = i) }
-                            },
-                            label = { Text("Целевой пульс") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = settings.thresholdHigh.toString(),
-                                onValueChange = { v ->
-                                    val i = v.toIntOrNull() ?: return@OutlinedTextField
-                                    vm.updateSettings { it.copy(thresholdHigh = i) }
+                    AnimatedVisibility(visible = settings.hrEnabled) {
+                        Column {
+                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                            EnumDropdown(
+                                label = "Режим",
+                                current = settings.hrMode,
+                                options = HrMode.values().toList(),
+                                optionLabel = {
+                                    when (it) {
+                                        HrMode.TARGET -> "Целевой пульс"
+                                        HrMode.ZONE -> "Зона (мин-макс)"
+                                    }
                                 },
-                                label = { Text("X (выше цели, +)") },
-                                modifier = Modifier.weight(1f)
+                                onSelect = { v -> vm.setHrMode(v) }
                             )
-                            OutlinedTextField(
-                                value = settings.thresholdLow.toString(),
+
+                            if (settings.hrMode == HrMode.TARGET) {
+                                SliderSetting(
+                                    label = "Целевой пульс",
+                                    value = settings.targetHr.toFloat(),
+                                    valueRange = 90f..190f,
+                                    steps = 99,
+                                    display = { "${it.roundToInt()} уд/мин" },
+                                    onValueChange = { v ->
+                                        vm.updateSettings { it.copy(targetHr = v.roundToInt()) }
+                                    }
+                                )
+                                SliderSetting(
+                                    label = "Допуск X (выше цели)",
+                                    value = settings.thresholdHigh.toFloat(),
+                                    valueRange = 1f..20f,
+                                    steps = 18,
+                                    display = { "${it.roundToInt()} уд" },
+                                    onValueChange = { v ->
+                                        vm.updateSettings { it.copy(thresholdHigh = v.roundToInt()) }
+                                    }
+                                )
+                                SliderSetting(
+                                    label = "Допуск Y (ниже цели)",
+                                    value = settings.thresholdLow.toFloat(),
+                                    valueRange = 1f..20f,
+                                    steps = 18,
+                                    display = { "${it.roundToInt()} уд" },
+                                    onValueChange = { v ->
+                                        vm.updateSettings { it.copy(thresholdLow = v.roundToInt()) }
+                                    }
+                                )
+                            } else {
+                                SliderSetting(
+                                    label = "Мин пульс",
+                                    value = settings.zoneMin.toFloat(),
+                                    valueRange = 90f..180f,
+                                    steps = 89,
+                                    display = { "${it.roundToInt()} уд/мин" },
+                                    onValueChange = { v ->
+                                        vm.updateSettings { it.copy(zoneMin = v.roundToInt()) }
+                                    }
+                                )
+                                SliderSetting(
+                                    label = "Макс пульс",
+                                    value = settings.zoneMax.toFloat(),
+                                    valueRange = 100f..190f,
+                                    steps = 89,
+                                    display = { "${it.roundToInt()} уд/мин" },
+                                    onValueChange = { v ->
+                                        vm.updateSettings { it.copy(zoneMax = v.roundToInt()) }
+                                    }
+                                )
+                            }
+
+                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                            SliderSetting(
+                                label = "Интервал проверки",
+                                value = settings.intervalSec.toFloat(),
+                                valueRange = 5f..120f,
+                                steps = 22,
+                                display = { "${it.roundToInt()} сек" },
                                 onValueChange = { v ->
-                                    val i = v.toIntOrNull() ?: return@OutlinedTextField
-                                    vm.updateSettings { it.copy(thresholdLow = i) }
-                                },
-                                label = { Text("Y (ниже цели, −)") },
-                                modifier = Modifier.weight(1f)
+                                    vm.updateSettings { it.copy(intervalSec = v.roundToInt()) }
+                                }
+                            )
+                            SliderSetting(
+                                label = "Шаг изменения скорости",
+                                value = settings.stepKmh.toFloat(),
+                                valueRange = 0.1f..2.0f,
+                                steps = 18,
+                                display = { "%.1f км/ч".format(it) },
+                                onValueChange = { v ->
+                                    vm.updateSettings {
+                                        it.copy(stepKmh = (v * 10).roundToInt() / 10.0)
+                                    }
+                                }
                             )
                         }
-                    } else {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = settings.zoneMin.toString(),
-                                onValueChange = { v ->
-                                    val i = v.toIntOrNull() ?: return@OutlinedTextField
-                                    vm.updateSettings { it.copy(zoneMin = i) }
-                                },
-                                label = { Text("Мин пульс") },
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = settings.zoneMax.toString(),
-                                onValueChange = { v ->
-                                    val i = v.toIntOrNull() ?: return@OutlinedTextField
-                                    vm.updateSettings { it.copy(zoneMax = i) }
-                                },
-                                label = { Text("Макс пульс") },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = settings.intervalSec.toString(),
-                        onValueChange = { v ->
-                            val i = v.toIntOrNull() ?: return@OutlinedTextField
-                            vm.updateSettings { it.copy(intervalSec = i) }
-                        },
-                        label = { Text("Интервал корректировки, сек") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = settings.stepKmh.toString(),
-                        onValueChange = { v ->
-                            val d = v.toDoubleOrNull() ?: return@OutlinedTextField
-                            vm.updateSettings { it.copy(stepKmh = d) }
-                        },
-                        label = { Text("Шаг изменения, км/ч") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = { vm.setAutoHrEnabled(settings.hrEnabled) }) {
-                        Text("Применить")
                     }
                 }
             }
 
-            // ---------- Дополнительно ----------
+            // ================= О приложении =================
             if (onOpenDebug != null || onOpenAbout != null) {
-                Spacer(Modifier.height(12.dp))
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("Дополнительно", fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(8.dp))
-                        if (onOpenDebug != null) {
-                            OutlinedButton(
-                                onClick = onOpenDebug,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("Debug (BLE)") }
-                            Spacer(Modifier.height(6.dp))
+                item { SectionHeader("О приложении") }
+                item {
+                    SettingsCard {
+                        onOpenDebug?.let {
+                            ActionRow(
+                                icon = { Icon(Icons.Default.BugReport, null, Modifier.size(22.dp)) },
+                                title = "Debug (BLE)",
+                                subtitle = "Логи, hex-команды, справочник",
+                                onClick = it
+                            )
                         }
-                        if (onOpenAbout != null) {
-                            OutlinedButton(
-                                onClick = onOpenAbout,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("О программе") }
+                        if (onOpenDebug != null && onOpenAbout != null) {
+                            HorizontalDivider()
+                        }
+                        onOpenAbout?.let {
+                            ActionRow(
+                                icon = { Icon(Icons.Default.Info, null, Modifier.size(22.dp)) },
+                                title = "О программе",
+                                subtitle = "Инструкция и справочник",
+                                onClick = it
+                            )
                         }
                     }
                 }
             }
+        }
+    }
+}
 
-            Spacer(Modifier.height(20.dp))
+// ================================================================
+//  Компоненты
+// ================================================================
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text.uppercase(),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.sp,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 4.dp, bottom = 0.dp)
+    )
+}
+
+@Composable
+private fun SettingsCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Card(
+        Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(16.dp), content = content)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> EnumDropdown(
+    label: String,
+    current: T,
+    options: List<T>,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
+    ) {
+        OutlinedTextField(
+            value = optionLabel(current),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth(),
+            singleLine = true
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(optionLabel(option)) },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text(
+                subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun SliderSetting(
+    label: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    display: (Float) -> String,
+    onValueChange: (Float) -> Unit
+) {
+    Column(Modifier.padding(vertical = 6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    display(value),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps
+        )
+    }
+}
+
+@Composable
+private fun ActionRow(
+    icon: @Composable () -> Unit,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(36.dp),
+            contentAlignment = Alignment.Center
+        ) { icon() }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text(
+                subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExpandableAdvanced(
+    settings: AppSettings,
+    vm: MainViewModel
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "rot")
+
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Дополнительно",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null
+            )
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(Modifier.padding(top = 4.dp)) {
+                OutlinedTextField(
+                    value = settings.manualWriteUuid,
+                    onValueChange = { v ->
+                        vm.updateSettings { it.copy(manualWriteUuid = v) }
+                    },
+                    label = { Text("UUID записи (опц.)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = settings.manualNotifyUuid,
+                    onValueChange = { v ->
+                        vm.updateSettings { it.copy(manualNotifyUuid = v) }
+                    },
+                    label = { Text("UUID уведомлений (опц.)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
