@@ -2,13 +2,10 @@ package com.custom.treadmill.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,8 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -33,7 +28,6 @@ import com.custom.treadmill.data.database.ProgramEntity
 import com.custom.treadmill.data.database.ProgramSegment
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import com.custom.treadmill.ui.viewmodels.ProgramViewModel
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 enum class SortMode { NAME_ASC, NAME_DESC, NEWEST }
@@ -688,15 +682,12 @@ private fun SegmentEditor(
     onDelete: () -> Unit,
     canDelete: Boolean
 ) {
-    var showTimePicker by remember { mutableStateOf(false) }
-    var showSpeedPicker by remember { mutableStateOf(false) }
-    var showInclinePicker by remember { mutableStateOf(false) }
-
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
         Column(Modifier.padding(10.dp)) {
+            // Шапка карточки сегмента
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -735,236 +726,118 @@ private fun SegmentEditor(
             )
             Spacer(Modifier.height(10.dp))
 
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ValueButton(
-                    label = "Время",
-                    value = if (seg.durationSec >= 60) "${seg.durationSec / 60}м ${seg.durationSec % 60}с" else "${seg.durationSec}с",
-                    modifier = Modifier.weight(1f),
-                    onClick = { showTimePicker = true }
-                )
-                ValueButton(
-                    label = "Скорость",
-                    value = "%.1f".format(seg.speedKmh),
-                    modifier = Modifier.weight(1f),
-                    onClick = { showSpeedPicker = true }
-                )
-                ValueButton(
-                    label = "Наклон %",
-                    value = "${seg.inclinePercent.roundToInt()}",
-                    modifier = Modifier.weight(1f),
-                    onClick = { showInclinePicker = true }
-                )
-            }
-        }
-    }
-
-    if (showTimePicker) {
-        TimePickerDialog(
-            initialSec = seg.durationSec,
-            onConfirm = {
-                onChange(seg.copy(durationSec = it))
-                showTimePicker = false
-            },
-            onDismiss = { showTimePicker = false }
-        )
-    }
-
-    if (showSpeedPicker) {
-        val speedItems = remember { (10..200).map { it / 10.0 } } // от 1.0 до 20.0
-        WheelPickerDialog(
-            title = "Скорость",
-            items = speedItems.map { "%.1f км/ч".format(it) },
-            initialIndex = (seg.speedKmh * 10 - 10).roundToInt().coerceIn(0, 190),
-            onConfirm = { idx ->
-                onChange(seg.copy(speedKmh = speedItems[idx]))
-                showSpeedPicker = false
-            },
-            onDismiss = { showSpeedPicker = false }
-        )
-    }
-
-    if (showInclinePicker) {
-        val inclineItems = remember { (0..15).toList() }
-        WheelPickerDialog(
-            title = "Наклон",
-            items = inclineItems.map { "$it %" },
-            initialIndex = seg.inclinePercent.roundToInt().coerceIn(0, 15),
-            onConfirm = { idx ->
-                onChange(seg.copy(inclinePercent = inclineItems[idx].toDouble()))
-                showInclinePicker = false
-            },
-            onDismiss = { showInclinePicker = false }
-        )
-    }
-}
-
-@Composable
-private fun ValueButton(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 1.dp,
-        onClick = onClick,
-        modifier = modifier.height(60.dp)
-    ) {
-        Column(
-            Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        }
-    }
-}
-
-@Composable
-private fun TimePickerDialog(
-    initialSec: Int,
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var mins by remember { mutableIntStateOf(initialSec / 60) }
-    var secs by remember { mutableIntStateOf(initialSec % 60) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Длительность", fontWeight = FontWeight.Bold) },
-        text = {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                WheelPicker(
-                    items = (0..120).map { "$it м" },
-                    initialIndex = mins,
-                    modifier = Modifier.weight(1f),
-                    onItemSelected = { mins = it }
-                )
-                WheelPicker(
-                    items = (0..59).map { "$it с" },
-                    initialIndex = secs,
-                    modifier = Modifier.weight(1f),
-                    onItemSelected = { secs = it }
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val total = (mins * 60 + secs).coerceAtLeast(1)
-                onConfirm(total)
-            }) { Text("OK") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
-    )
-}
-
-@Composable
-private fun WheelPickerDialog(
-    title: String,
-    items: List<String>,
-    initialIndex: Int,
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var selectedIndex by remember { mutableIntStateOf(initialIndex) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title, fontWeight = FontWeight.Bold) },
-        text = {
-            WheelPicker(
-                items = items,
-                initialIndex = initialIndex,
-                onItemSelected = { selectedIndex = it }
+            // --- Слайдер Время ---
+            val mins = seg.durationSec / 60
+            val secs = seg.durationSec % 60
+            val timeText = if (seg.durationSec >= 60) "${mins}м ${secs}с" else "${secs}с"
+            
+            CompactSlider(
+                label = "Длительность",
+                valueText = timeText,
+                value = seg.durationSec.toFloat(),
+                valueRange = 10f..3600f, // от 10 сек до 1 часа
+                steps = 358, // шаг 10 секунд: (3600 - 10) / 10 - 1
+                onValueChange = { rawValue ->
+                    val rounded = (rawValue / 10).roundToInt() * 10
+                    onChange(seg.copy(durationSec = rounded))
+                }
             )
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(selectedIndex) }) { Text("OK") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            // --- Слайдеры Скорость (целые и десятые) ---
+            val speedWhole = seg.speedKmh.toInt()
+            val speedTenth = (seg.speedKmh * 10).roundToInt() % 10
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CompactSlider(
+                    label = "Скорость (целые)",
+                    valueText = "$speedWhole",
+                    value = speedWhole.toFloat(),
+                    valueRange = 1f..20f,
+                    steps = 18,
+                    modifier = Modifier.weight(1f),
+                    onValueChange = { rawValue ->
+                        val newWhole = rawValue.roundToInt()
+                        val newSpeed = newWhole + (speedTenth / 10.0)
+                        onChange(seg.copy(speedKmh = newSpeed))
+                    }
+                )
+                CompactSlider(
+                    label = "Десятые",
+                    valueText = ".$speedTenth",
+                    value = speedTenth.toFloat(),
+                    valueRange = 0f..9f,
+                    steps = 8,
+                    modifier = Modifier.weight(1f),
+                    onValueChange = { rawValue ->
+                        val newTenth = rawValue.roundToInt()
+                        val newSpeed = speedWhole + (newTenth / 10.0)
+                        onChange(seg.copy(speedKmh = newSpeed))
+                    }
+                )
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            // --- Слайдер Наклон ---
+            CompactSlider(
+                label = "Наклон",
+                valueText = "${seg.inclinePercent.roundToInt()} %",
+                value = seg.inclinePercent.toFloat(),
+                valueRange = 0f..15f,
+                steps = 14,
+                onValueChange = { rawValue ->
+                    onChange(seg.copy(inclinePercent = rawValue.roundToInt().toDouble()))
+                }
+            )
         }
-    )
+    }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * Компактный слайдер в стиле экрана настроек.
+ */
 @Composable
-private fun WheelPicker(
-    items: List<String>,
-    initialIndex: Int,
+private fun CompactSlider(
+    label: String,
+    valueText: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
     modifier: Modifier = Modifier,
-    onItemSelected: (Int) -> Unit
+    onValueChange: (Float) -> Unit
 ) {
-    val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = initialIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
-    )
-    val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
-
-    val selectedIndex by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
-        }
-    }
-
-    LaunchedEffect(selectedIndex) {
-        onItemSelected(selectedIndex)
-    }
-
-    Box(
-        modifier = modifier.height(150.dp).fillMaxWidth(),
-        contentAlignment = Alignment.Center
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(40.dp),
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-            shape = RoundedCornerShape(8.dp)
-        ) {}
-
-        LazyColumn(
-            state = listState,
-            flingBehavior = flingBehavior,
-            contentPadding = PaddingValues(vertical = 55.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            itemsIndexed(items) { index, item ->
-                val isSelected = index == selectedIndex
-                val distance = abs(index - selectedIndex)
-                val alpha = when (distance) {
-                    0 -> 1f
-                    1 -> 0.4f
-                    else -> 0.15f
-                }
-                val scale = when (distance) {
-                    0 -> 1f
-                    1 -> 0.85f
-                    else -> 0.7f
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(40.dp)
-                        .alpha(alpha)
-                        .scale(scale),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = item,
-                        fontSize = if (isSelected) 22.sp else 18.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+    Column(modifier.padding(vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text(
+                    valueText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
             }
         }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps,
+            modifier = Modifier.height(24.dp)
+        )
     }
 }
