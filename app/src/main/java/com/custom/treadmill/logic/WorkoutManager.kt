@@ -34,18 +34,21 @@ class WorkoutManager {
     private var scopeRef: CoroutineScope? = null
     private var onSetSpeedRef: (suspend (Double) -> Unit)? = null
     private var onSetInclineRef: (suspend (Double) -> Unit)? = null
+    private var onFinishRef: (suspend () -> Unit)? = null
 
     fun start(
         scope: CoroutineScope,
         program: ProgramData,
         onSetSpeed: suspend (Double) -> Unit,
-        onSetIncline: suspend (Double) -> Unit = ::noopDouble
+        onSetIncline: suspend (Double) -> Unit = ::noopDouble,
+        onFinish: suspend () -> Unit = { }
     ) {
         stop()
         currentProgram = program
         scopeRef = scope
         onSetSpeedRef = onSetSpeed
         onSetInclineRef = onSetIncline
+        onFinishRef = onFinish
 
         val total = program.segments.sumOf { it.durationSec }
         _state.value = WorkoutState(
@@ -85,10 +88,6 @@ class WorkoutManager {
         }
     }
 
-    /**
-     * Пропустить текущий сегмент — сразу перейти к следующему.
-     * Работает и на паузе (после «Продолжить» начнётся со следующего).
-     */
     fun skipCurrentSegment() {
         val s = _state.value
         if (!s.running) return
@@ -96,7 +95,6 @@ class WorkoutManager {
 
         val nextIndex = s.currentSegmentIndex + 1
 
-        // Дальше сегментов нет — просто завершаем
         if (nextIndex >= program.segments.size) {
             job?.cancel()
             job = null
@@ -105,20 +103,18 @@ class WorkoutManager {
                 paused = false,
                 finished = true
             )
+            scopeRef?.launch { onFinishRef?.invoke() }
             return
         }
 
-        // Учитываем оставшееся время текущего сегмента в общий счётчик
         val remainingInCurrent = (s.segmentDurationSec - s.segmentElapsedSec).coerceAtLeast(0)
         val newTotal = s.totalElapsedSec + remainingInCurrent
 
         val next = program.segments[nextIndex]
 
-        // Останавливаем текущий loop
         job?.cancel()
         job = null
 
-        // Переводим state на новый сегмент
         _state.value = s.copy(
             currentSegmentIndex = nextIndex,
             currentSegmentName = next.name.ifBlank { "Сегмент ${nextIndex + 1}" },
@@ -127,7 +123,6 @@ class WorkoutManager {
             totalElapsedSec = newTotal
         )
 
-        // Перезапускаем loop — он подхватит новый индекс
         launchLoop()
     }
 
@@ -138,6 +133,7 @@ class WorkoutManager {
         scopeRef = null
         onSetSpeedRef = null
         onSetInclineRef = null
+        onFinishRef = null
         _state.value = WorkoutState()
     }
 
@@ -146,9 +142,18 @@ class WorkoutManager {
         val program = currentProgram ?: return
         val onSetSpeed: suspend (Double) -> Unit = onSetSpeedRef ?: return
         val onSetIncline: suspend (Double) -> Unit = onSetInclineRef ?: ::noopDouble
+        val onFinish: suspend () -> Unit = onFinishRef ?: { }
 
         job = scope.launch {
             val segments = program.segments
+
+            if (_state.value.segmentElapsedSec > 0 &&
+                _state.value.currentSegmentIndex < segments.size
+            ) {
+                val seg = segments[_state.value.currentSegmentIndex]
+                onSetSpeed(seg.speedKmh)
+                onSetIncline(seg.inclinePercent)
+            }
 
             var index = _state.value.currentSegmentIndex
             var totalElapsed = _state.value.totalElapsedSec
@@ -156,7 +161,6 @@ class WorkoutManager {
             while (index < segments.size && isActive) {
                 val seg = segments[index]
 
-                // При входе в сегмент — сразу отправляем команды
                 if (_state.value.segmentElapsedSec == 0) {
                     onSetSpeed(seg.speedKmh)
                     onSetIncline(seg.inclinePercent)
@@ -196,6 +200,9 @@ class WorkoutManager {
                     paused = false,
                     finished = true
                 )
+                // Останавливаем belt после окончания программы.
+                // Иначе он продолжит идти с последней скоростью.
+                onFinish()
             }
         }
     }
