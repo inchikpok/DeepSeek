@@ -101,6 +101,13 @@ fun SettingsScreen(
                         },
                         onSelect = { v -> vm.updateSettings { it.copy(themeMode = v) } }
                     )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    SwitchRow(
+                        title = "Не гасить экран",
+                        subtitle = "Экран тренировки — всегда. Главный — при движении belt'а",
+                        checked = settings.keepScreenOn,
+                        onChange = { v -> vm.updateSettings { it.copy(keepScreenOn = v) } }
+                    )
                 }
             }
 
