@@ -227,7 +227,7 @@ fun ProgramsScreen(
             LazyColumn(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 20.dp)
+                contentPadding = PaddingValues(bottom = 96.dp)
             ) {
                 items(visible, key = { it.id }) { p ->
                     val data = remember(p.id, p.segmentsJson) { programVm.toData(p) }
