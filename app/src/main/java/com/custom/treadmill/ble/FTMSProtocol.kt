@@ -80,36 +80,22 @@ class FTMSProtocol : ITreadmillProtocol {
 
         delay(300)
         requestControl()
-        wakeUp()
+        // Wake-up burst (00 01 00) УБРАН — belt в спящем режиме
+        // его игнорирует, а на разбуженном только зря пищит.
         startRetryLoop()
 
         return controlFound
     }
 
-    private suspend fun wakeUp() {
-        val uuid = controlPointUuid ?: return
-        val c = conn ?: return
-        try {
-            sendMutex.withLock {
-                c.write(uuid, byteArrayOf(0x00), true); delay(200)
-                c.write(uuid, byteArrayOf(0x01), true); delay(200)
-                c.write(uuid, byteArrayOf(0x00), true)
-            }
-            log("wake-up burst отправлен (00 01 00)")
-        } catch (e: Exception) {
-            Log.w("FTMS", "wake-up failed: ${e.message}")
-        }
-    }
-
     /**
-     * Retry-цикл.
+     * Retry-цикл работает ТОЛЬКО когда belt реально едет.
      *
-     * ВАЖНО: ретраи наклона работают ТОЛЬКО когда belt реально едет
-     * (speed > 0.5). Когда belt стоит, он игнорирует 03 XX XX, и мы
-     * только засоряем лог.
+     * Когда belt стоит:
+     * • speed retry молчит — иначе каждые 5 сек будет писк;
+     * • incline retry молчит — belt не применит наклон, пока не поедет.
      *
-     * Ретраи скорости работают, если lastRequestedSpeed >= 0.5,
-     * независимо от текущей скорости belt'а (это нужно для resume).
+     * Когда belt поехал — retry ловит «убегание» скорости и потерянные
+     * команды наклона.
      */
     private fun startRetryLoop() {
         if (retryJob?.isActive == true) return
@@ -119,9 +105,11 @@ class FTMSProtocol : ITreadmillProtocol {
                 val now = System.currentTimeMillis()
                 val beltSpeed = _data.value.speedKmh
 
-                // --- Скорость: если belt отклонился от цели ---
+                // --- Speed retry: только на ходу ---
                 val speedTarget = lastRequestedSpeed
-                if (speedTarget >= 0.5 && now - lastSpeedSentAt >= 5000L) {
+                if (beltSpeed >= 0.5 && speedTarget >= 0.5 &&
+                    now - lastSpeedSentAt >= 5000L
+                ) {
                     if (abs(beltSpeed - speedTarget) >= 0.5) {
                         sendSpeedRaw(speedTarget)
                         lastSpeedSentAt = now
@@ -129,7 +117,7 @@ class FTMSProtocol : ITreadmillProtocol {
                     }
                 }
 
-                // --- Наклон: только когда belt реально едет ---
+                // --- Incline retry: только на ходу ---
                 if (beltSpeed >= 0.5 && now - lastInclineSentAt >= 5000L) {
                     val incTarget = lastRequestedIncline
                     val actualIncline = _data.value.inclinePercent
@@ -164,10 +152,6 @@ class FTMSProtocol : ITreadmillProtocol {
         }
     }
 
-    /**
-     * Отправка наклона — ОДИН write, без дублирования.
-     * Belt принимает наклон с первого раза (проверено в B5).
-     */
     private suspend fun sendInclineRaw(percent: Double) {
         val uuid = controlPointUuid ?: return
         val c = conn ?: return
@@ -213,6 +197,14 @@ class FTMSProtocol : ITreadmillProtocol {
     override suspend fun stop(): Boolean {
         val uuid = controlPointUuid ?: return false
         lastRequestedSpeed = 0.0
+
+        // Belt уже стоит — не пищим лишний раз
+        val alreadyStopped = _data.value.speedKmh < 0.1
+        if (alreadyStopped) {
+            log("стоп (уже стоит, без команды)")
+            return true
+        }
+
         sendMutex.withLock {
             conn?.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
         }
@@ -224,6 +216,15 @@ class FTMSProtocol : ITreadmillProtocol {
         val v = applySpeedResolution(speedKmh.coerceAtLeast(0.0))
         lastRequestedSpeed = v
         lastSpeedSentAt = System.currentTimeMillis()
+
+        // Belt стоит — команду НЕ шлём (иначе писк), только запоминаем.
+        // Применится через MainViewModel.startTreadmill после waitForBeltRunning.
+        val beltRunning = _data.value.speedKmh >= 0.5
+        if (!beltRunning) {
+            log("скорость $v (сохранено, belt стоит)")
+            return true
+        }
+
         sendSpeedRaw(v)
         log("скорость $v")
         return true
@@ -235,6 +236,14 @@ class FTMSProtocol : ITreadmillProtocol {
         else percent.coerceIn(0.0, 30.0)
         lastRequestedIncline = t
         lastInclineSentAt = System.currentTimeMillis()
+
+        // Belt стоит — команду НЕ шлём (иначе писк).
+        val beltRunning = _data.value.speedKmh >= 0.5
+        if (!beltRunning) {
+            log("наклон $t% (сохранено, belt стоит)")
+            return true
+        }
+
         sendInclineRaw(t)
         log("наклон $t%")
         return true
