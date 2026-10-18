@@ -148,6 +148,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         label = "Скорость",
                         value = "%.1f".format(targetSpeed),
                         unit = "км/ч",
+                        enabled = treadmillReady, // <--- Блокируем кнопки, если нет связи
                         onMinus = { vm.setSpeed(targetSpeed - speedStep) },
                         onPlus = { vm.setSpeed(targetSpeed + speedStep) },
                         modifier = Modifier.weight(1f)
@@ -156,6 +157,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         label = "Наклон",
                         value = "${targetIncline.roundToInt()}",
                         unit = "%",
+                        enabled = treadmillReady, // <--- Блокируем кнопки, если нет связи
                         onMinus = { vm.setIncline(max(0.0, targetIncline.roundToInt() - 1.0)) },
                         onPlus = { vm.setIncline(targetIncline.roundToInt() + 1.0) },
                         onReset = { vm.setIncline(0.0) },
@@ -394,6 +396,7 @@ private fun ControlTile(
     label: String,
     value: String,
     unit: String,
+    enabled: Boolean,
     onMinus: () -> Unit,
     onPlus: () -> Unit,
     modifier: Modifier = Modifier,
@@ -420,7 +423,7 @@ private fun ControlTile(
                     text = value,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.width(3.dp))
                 Text(
@@ -434,6 +437,7 @@ private fun ControlTile(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilledTonalButton(
                     onClick = onMinus,
+                    enabled = enabled, // <--- Блокировка
                     modifier = Modifier.weight(1f).height(34.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) {
@@ -441,6 +445,7 @@ private fun ControlTile(
                 }
                 FilledTonalButton(
                     onClick = onPlus,
+                    enabled = enabled, // <--- Блокировка
                     modifier = Modifier.weight(1f).height(34.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) {
@@ -450,6 +455,7 @@ private fun ControlTile(
             if (onReset != null) {
                 TextButton(
                     onClick = onReset,
+                    enabled = enabled, // <--- Блокировка
                     modifier = Modifier.height(18.dp),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                 ) { Text("Сбросить", fontSize = 10.sp) }
