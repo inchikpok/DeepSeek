@@ -38,8 +38,10 @@ class TreadmillSession(private val appContext: Context) {
 
     private var treadmillStateJob: Job? = null
     private var treadmillNotifyJob: Job? = null
+    private var treadmillLogJob: Job? = null // [ФИКС] Добавили Job для логов
     private var hrStateJob: Job? = null
     private var hrNotifyJob: Job? = null
+    private var hrLogJob: Job? = null // [ФИКС]
 
     private val _treadmillState = MutableStateFlow(BleConnectionState.DISCONNECTED)
     val treadmillState: StateFlow<BleConnectionState> = _treadmillState.asStateFlow()
@@ -180,6 +182,9 @@ class TreadmillSession(private val appContext: Context) {
         val conn = BleConnection(appContext, "TR")
         treadmillConn = conn
         
+        // [ФИКС] Подписываемся на логи подключения
+        treadmillLogJob = scope.launch { conn.log.collect { addLog(it) } }
+        
         treadmillStateJob = scope.launch {
             conn.state.collect { state ->
                 _treadmillState.value = state
@@ -201,17 +206,26 @@ class TreadmillSession(private val appContext: Context) {
         if (isAutoReconnecting) return
         val mac = lastConnectedMac ?: return
         val adapter = ble.adapter ?: return
+        
         isAutoReconnecting = true
+        addLog("Связь потеряна. Запуск автопереподключения к $mac...")
         _statusMessage.value = "Связь потеряна. Переподключение..."
 
         scope.launch {
             for (i in 1..10) {
                 if (_treadmillState.value == BleConnectionState.READY) break
+                
+                addLog("Попытка переподключения $i из 10...")
                 val device = try { adapter.getRemoteDevice(mac) } catch (_: Exception) { null }
+                
                 if (device != null) {
                     _treadmillState.value = BleConnectionState.CONNECTING
                     val conn = BleConnection(appContext, "TR")
                     treadmillConn = conn
+                    
+                    treadmillLogJob?.cancel() // Отменяем лог старого подключения
+                    treadmillLogJob = scope.launch { conn.log.collect { addLog(it) } } // Подписываемся на новый
+                    
                     treadmillStateJob = scope.launch {
                         conn.state.collect { state ->
                             _treadmillState.value = state
@@ -223,11 +237,14 @@ class TreadmillSession(private val appContext: Context) {
                 }
                 delay(3000)
             }
+            
             isAutoReconnecting = false
             if (_treadmillState.value != BleConnectionState.READY) {
+                addLog("Автопереподключение не удалось после 10 попыток.")
                 _statusMessage.value = "Не удалось переподключиться. Нажмите кнопку на дорожке."
                 stopService()
             } else {
+                addLog("Связь успешно восстановлена!")
                 _statusMessage.value = "Связь восстановлена!"
             }
         }
@@ -235,7 +252,10 @@ class TreadmillSession(private val appContext: Context) {
 
     private fun onTreadmillReady(conn: BleConnection) {
         scope.launch {
-            val p = FTMSProtocol().apply { sendStartCommand = true }
+            val p = FTMSProtocol().apply { 
+                sendStartCommand = true 
+                onLog = { msg -> addLog(msg) }
+            }
             protocol = p
             addLog("Протокол: ${p.protocolName}")
             scope.launch { p.data.collect { _treadmillData.value = it } }
@@ -250,6 +270,7 @@ class TreadmillSession(private val appContext: Context) {
     fun disconnectTreadmill() {
         isManualDisconnect = true
         lastConnectedMac = null
+        addLog("Ручное отключение дорожки")
         disconnectTreadmillInternal()
         stopService()
     }
@@ -257,6 +278,7 @@ class TreadmillSession(private val appContext: Context) {
     private fun disconnectTreadmillInternal() {
         treadmillStateJob?.cancel()
         treadmillNotifyJob?.cancel()
+        treadmillLogJob?.cancel()
         treadmillConn?.disconnect()
         treadmillConn = null
         protocol = null
@@ -282,7 +304,7 @@ class TreadmillSession(private val appContext: Context) {
         hrConn = conn
         hrService.reset()
         
-        val logJob = scope.launch { conn.log.collect { addLog(it) } }
+        hrLogJob = scope.launch { conn.log.collect { addLog(it) } } // [ФИКС]
         hrStateJob = scope.launch {
             conn.state.collect { state ->
                 _hrState.value = state
@@ -308,6 +330,7 @@ class TreadmillSession(private val appContext: Context) {
     fun disconnectHeartRate() {
         hrStateJob?.cancel()
         hrNotifyJob?.cancel()
+        hrLogJob?.cancel()
         hrConn?.disconnect()
         hrConn = null
         _hrState.value = BleConnectionState.DISCONNECTED
@@ -315,6 +338,7 @@ class TreadmillSession(private val appContext: Context) {
         _hrName.value = null
     }
 
+    // ... (Остальные методы setSpeed, setIncline, startTreadmill и т.д. остаются без изменений)
     fun setSpeed(kmh: Double) {
         val s = settingsStore.settings.value
         val safe = kmh.coerceIn(s.minSpeedKmh, s.maxSpeedKmh)
@@ -445,10 +469,6 @@ class TreadmillSession(private val appContext: Context) {
         scope.launch { protocol?.stop() }
     }
 
-    fun startHrAutoLoop() {
-        // Логика та же, что была в MainViewModel
-    }
-    
     fun setAutoHrEnabled(enabled: Boolean) {
         settingsStore.update { it.copy(hrEnabled = enabled) }
     }
@@ -461,7 +481,6 @@ class TreadmillSession(private val appContext: Context) {
         hrSum = 0L; hrCount = 0L; hrMax = 0; speedSum = 0.0; speedCount = 0L
     }
 
-    // Сделали публичным, так как вызывается из WorkoutScreen
     fun saveWorkoutLog() {
         if (workoutLogSaved) return
         val ws = workoutManager.state.value
