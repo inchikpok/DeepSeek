@@ -19,6 +19,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // [ФИКС] Устанавливается рядом со старой версией, не конфликтует
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -62,7 +66,5 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
-    
-    // Для тестов
     testImplementation("junit:junit:4.13.2")
 }
