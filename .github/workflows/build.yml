@@ -27,13 +27,12 @@ jobs:
         with:
           gradle-version: '8.6'
 
-      # [ФИКС] Надежное сохранение файла ключа
       - name: Restore Debug Keystore
         uses: actions/cache/restore@v4
         id: cache-keystore
         with:
           path: ~/.android/debug.keystore
-          key: debug-keystore-v2
+          key: debug-keystore-v3
 
       - name: Create Debug Keystore if not exists
         if: steps.cache-keystore.outputs.cache-hit != 'true'
@@ -46,7 +45,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/.android/debug.keystore
-          key: debug-keystore-v2
+          key: debug-keystore-v3
 
       - name: Inject version code
         run: |
