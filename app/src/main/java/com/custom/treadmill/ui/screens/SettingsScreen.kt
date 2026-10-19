@@ -25,32 +25,12 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.SettingsBluetooth
 import androidx.compose.material.icons.outlined.Speed
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -62,6 +42,7 @@ import com.custom.treadmill.data.repository.AppSettings
 import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.data.repository.ProtocolType
 import com.custom.treadmill.data.repository.ThemeMode
+import com.custom.treadmill.logic.HeartRateZoneCalculator
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import kotlin.math.roundToInt
 
@@ -73,6 +54,7 @@ fun SettingsScreen(
     onOpenAbout: (() -> Unit)? = null
 ) {
     val settings by vm.settings.collectAsState()
+    val calculatedMaxHr = HeartRateZoneCalculator.getEffectiveMaxHr(settings)
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         LazyColumn(
@@ -88,11 +70,46 @@ fun SettingsScreen(
                     if (onBack != null) {
                         TextButton(onClick = onBack) { Text("← Назад") }
                     }
-                    Text(
-                        "Настройки",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 24.sp,
-                        color = MaterialTheme.colorScheme.onBackground
+                    Text("Настройки", fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                }
+            }
+
+            // ================= ПРОФИЛЬ СПОРТСМЕНА =================
+            item {
+                SettingsGroup(title = "Профиль спортсмена", icon = Icons.Outlined.Person) {
+                    CompactSliderSetting(
+                        label = "Вес",
+                        value = settings.weightKg.toFloat(),
+                        valueRange = 40f..150f,
+                        steps = 109,
+                        display = { "${it.roundToInt()} кг" },
+                        onValueChange = { v -> vm.updateSettings { it.copy(weightKg = v.roundToInt().toDouble()) } }
+                    )
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                    CompactSliderSetting(
+                        label = "Возраст",
+                        value = settings.age.toFloat(),
+                        valueRange = 10f..90f,
+                        steps = 79,
+                        display = { "${it.roundToInt()} лет" },
+                        onValueChange = { v -> vm.updateSettings { it.copy(age = v.roundToInt()) } }
+                    )
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                    CompactEnumDropdown(
+                        label = "Пол (для расчета пульса)",
+                        current = settings.isMale,
+                        options = listOf(true, false),
+                        optionLabel = { if (it) "Мужской" else "Женский" },
+                        onSelect = { v -> vm.updateSettings { it.copy(isMale = v) } }
+                    )
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                    CompactSliderSetting(
+                        label = "Пульс в покое",
+                        value = settings.restingHr.toFloat(),
+                        valueRange = 40f..100f,
+                        steps = 59,
+                        display = { "${it.roundToInt()} уд/мин" },
+                        onValueChange = { v -> vm.updateSettings { it.copy(restingHr = v.roundToInt()) } }
                     )
                 }
             }
@@ -186,15 +203,6 @@ fun SettingsScreen(
                         display = { "${it.roundToInt()} %" },
                         onValueChange = { v -> vm.updateSettings { it.copy(maxInclinePercent = v.roundToInt().toDouble()) } }
                     )
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                    CompactSliderSetting(
-                        label = "Вес для калорий",
-                        value = settings.weightKg.toFloat(),
-                        valueRange = 40f..150f,
-                        steps = 109,
-                        display = { "${it.roundToInt()} кг" },
-                        onValueChange = { v -> vm.updateSettings { it.copy(weightKg = v.roundToInt().toDouble()) } }
-                    )
                 }
             }
 
@@ -285,15 +293,31 @@ fun SettingsScreen(
                                 display = { "%.1f".format(it) },
                                 onValueChange = { v -> vm.updateSettings { it.copy(stepKmh = (v * 10).roundToInt() / 10.0) } }
                             )
+                            
                             HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                            CompactSliderSetting(
-                                label = "Максимальный пульс (для графика)",
-                                value = settings.maxHr.toFloat(),
-                                valueRange = 150f..220f,
-                                steps = 69,
-                                display = { "${it.roundToInt()}" },
-                                onValueChange = { v -> vm.updateSettings { it.copy(maxHr = v.roundToInt()) } }
+                            CompactSwitchRow(
+                                title = "Авто-расчет Max пульса",
+                                subtitle = "По формуле (Tanaka/Gulati)",
+                                checked = settings.autoMaxHr,
+                                onChange = { v -> vm.updateSettings { it.copy(autoMaxHr = v) } }
                             )
+                            
+                            if (settings.autoMaxHr) {
+                                ListItem(
+                                    headlineContent = { Text("Рассчитанный максимум", fontSize = 15.sp) },
+                                    trailingContent = { Text("$calculatedMaxHr уд/мин", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                )
+                            } else {
+                                CompactSliderSetting(
+                                    label = "Ручной Max пульс",
+                                    value = settings.maxHr.toFloat(),
+                                    valueRange = 150f..220f,
+                                    steps = 69,
+                                    display = { "${it.roundToInt()}" },
+                                    onValueChange = { v -> vm.updateSettings { it.copy(maxHr = v.roundToInt()) } }
+                                )
+                            }
                         }
                     }
                 }
@@ -329,56 +353,25 @@ fun SettingsScreen(
     }
 }
 
-// ================================================================
-//  Современные компактные компоненты
-// ================================================================
+// ... (Остальные компоненты: SettingsGroup, CompactSwitchRow, CompactEnumDropdown, CompactSliderSetting, CompactActionRow, ExpandableAdvanced — оставить без изменений, они стандартные)
+// Я продублирую их ниже для полноты файла.
 
 @Composable
-private fun SettingsGroup(
-    title: String,
-    icon: ImageVector,
-    content: @Composable () -> Unit
-) {
+private fun SettingsGroup(title: String, icon: ImageVector, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.padding(start = 4.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
-            )
+        Row(Modifier.padding(start = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text(
-                title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
         }
-        Card(
-            Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            )
-        ) {
-            Column(Modifier.fillMaxWidth()) {
-                content()
-            }
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))) {
+            Column(Modifier.fillMaxWidth()) { content() }
         }
     }
 }
 
 @Composable
-private fun CompactSwitchRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onChange: (Boolean) -> Unit
-) {
+private fun CompactSwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     ListItem(
         headlineContent = { Text(title, fontSize = 15.sp) },
         supportingContent = { Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
@@ -389,144 +382,64 @@ private fun CompactSwitchRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun <T> CompactEnumDropdown(
-    label: String,
-    current: T,
-    options: List<T>,
-    optionLabel: (T) -> String,
-    onSelect: (T) -> Unit
-) {
+private fun <T> CompactEnumDropdown(label: String, current: T, options: List<T>, optionLabel: (T) -> String, onSelect: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-    ) {
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
         OutlinedTextField(
-            value = optionLabel(current),
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(label, fontSize = 13.sp) },
-            textStyle = MaterialTheme.typography.bodyMedium,
+            value = optionLabel(current), onValueChange = {}, readOnly = true,
+            label = { Text(label, fontSize = 13.sp) }, textStyle = MaterialTheme.typography.bodyMedium,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth(),
-            singleLine = true
+            modifier = Modifier.menuAnchor().fillMaxWidth(), singleLine = true
         )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(optionLabel(option)) },
-                    onClick = {
-                        onSelect(option)
-                        expanded = false
-                    }
-                )
+                DropdownMenuItem(text = { Text(optionLabel(option)) }, onClick = { onSelect(option); expanded = false })
             }
         }
     }
 }
 
 @Composable
-private fun CompactSliderSetting(
-    label: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    steps: Int,
-    display: (Float) -> String,
-    onValueChange: (Float) -> Unit
-) {
+private fun CompactSliderSetting(label: String, value: Float, valueRange: ClosedFloatingPointRange<Float>, steps: Int, display: (Float) -> String, onValueChange: (Float) -> Unit) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(6.dp)
-            ) {
-                Text(
-                    display(value),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(6.dp)) {
+                Text(display(value), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
             }
         }
         Spacer(Modifier.height(4.dp))
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            steps = steps,
-            modifier = Modifier.height(24.dp)
-        )
+        Slider(value = value, onValueChange = onValueChange, valueRange = valueRange, steps = steps, modifier = Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun CompactActionRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
+private fun CompactActionRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(title, fontSize = 15.sp) },
         supportingContent = { Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        leadingContent = {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        },
+        leadingContent = { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
         modifier = Modifier.clickable(onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
 
 @Composable
-private fun ExpandableAdvanced(
-    settings: AppSettings,
-    vm: MainViewModel
-) {
+private fun ExpandableAdvanced(settings: AppSettings, vm: MainViewModel) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "rot")
-
     Column {
         ListItem(
             headlineContent = { Text("Дополнительно", fontSize = 15.sp) },
             supportingContent = { Text("Ручные UUID характеристик", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-            trailingContent = {
-                Icon(
-                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                    contentDescription = null
-                )
-            },
+            trailingContent = { Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, contentDescription = null) },
             modifier = Modifier.clickable { expanded = !expanded },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
-
         AnimatedVisibility(visible = expanded) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).padding(bottom = 12.dp)) {
-                OutlinedTextField(
-                    value = settings.manualWriteUuid,
-                    onValueChange = { v -> vm.updateSettings { it.copy(manualWriteUuid = v) } },
-                    label = { Text("UUID записи (опц.)", fontSize = 12.sp) },
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = settings.manualWriteUuid, onValueChange = { v -> vm.updateSettings { it.copy(manualWriteUuid = v) } }, label = { Text("UUID записи (опц.)", fontSize = 12.sp) }, textStyle = MaterialTheme.typography.bodySmall, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = settings.manualNotifyUuid,
-                    onValueChange = { v -> vm.updateSettings { it.copy(manualNotifyUuid = v) } },
-                    label = { Text("UUID уведомлений (опц.)", fontSize = 12.sp) },
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = settings.manualNotifyUuid, onValueChange = { v -> vm.updateSettings { it.copy(manualNotifyUuid = v) } }, label = { Text("UUID уведомлений (опц.)", fontSize = 12.sp) }, textStyle = MaterialTheme.typography.bodySmall, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
         }
     }
