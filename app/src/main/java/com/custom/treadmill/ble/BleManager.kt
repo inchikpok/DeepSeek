@@ -86,6 +86,12 @@ class BleManager(private val context: Context) {
             _scanLog.tryEmit("BLE сканер недоступен")
             return
         }
+
+        // [ФИКС] Принудительно останавливаем старое сканирование перед новым
+        try {
+            scanner.stopScan(scanCallback)
+        } catch (_: Exception) {}
+
         _scanResults.value = emptyList()
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -100,7 +106,7 @@ class BleManager(private val context: Context) {
     }
 
     fun stopScan() {
-        if (!scanning) return
+        // Вызываем stopScan даже если флаг scanning = false, чтобы очистить стек
         try { adapter?.bluetoothLeScanner?.stopScan(scanCallback) } catch (_: Exception) {}
         scanning = false
         _scanLog.tryEmit("Сканирование остановлено")
