@@ -271,6 +271,9 @@ class TreadmillSession(private val appContext: Context) {
         isManualDisconnect = true
         lastConnectedMac = null
         addLog("Ручное отключение дорожки")
+                // [ФИКС] Останавливаем сканер и чистим стек
+        ble.stopScan() 
+
         disconnectTreadmillInternal()
         stopService()
     }
