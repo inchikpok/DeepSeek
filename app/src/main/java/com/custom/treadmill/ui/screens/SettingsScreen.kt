@@ -3,7 +3,6 @@ package com.custom.treadmill.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,7 +24,6 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.SettingsBluetooth
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -180,18 +178,6 @@ fun SettingsScreen(
                         subtitle = "Экран тренировки всегда. Главный — при движении belt.",
                         checked = settings.keepScreenOn,
                         onChange = { v -> vm.updateSettings { it.copy(keepScreenOn = v) } }
-                    )
-                }
-            }
-
-            // ================= Оборудование =================
-            item {
-                SettingsGroup(title = "Оборудование", icon = Icons.Outlined.SettingsBluetooth) {
-                    CompactSwitchRow(
-                        title = "Команда Start (0x07)",
-                        subtitle = "Не выключайте — дорожка не поедет",
-                        checked = settings.sendStartCommand,
-                        onChange = { v -> vm.updateSettings { it.copy(sendStartCommand = v) } }
                     )
                 }
             }
