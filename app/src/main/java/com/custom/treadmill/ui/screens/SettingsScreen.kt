@@ -28,9 +28,30 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.SettingsBluetooth
 import androidx.compose.material.icons.outlined.Speed
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -77,40 +98,66 @@ fun SettingsScreen(
             // ================= ПРОФИЛЬ СПОРТСМЕНА =================
             item {
                 SettingsGroup(title = "Профиль спортсмена", icon = Icons.Outlined.Person) {
-                    CompactSliderSetting(
-                        label = "Вес",
-                        value = settings.weightKg.toFloat(),
-                        valueRange = 40f..150f,
-                        steps = 109,
-                        display = { "${it.roundToInt()} кг" },
-                        onValueChange = { v -> vm.updateSettings { it.copy(weightKg = v.roundToInt().toDouble()) } }
+                    var expanded by rememberSaveable { mutableStateOf(false) }
+                    
+                    ListItem(
+                        headlineContent = { Text("Параметры профиля", fontSize = 15.sp) },
+                        supportingContent = { 
+                            Text(
+                                if (expanded) "Нажмите, чтобы свернуть" else "Возраст, вес, пол, пульс покоя", 
+                                fontSize = 12.sp, 
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            ) 
+                        },
+                        trailingContent = { 
+                            Icon(
+                                if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, 
+                                contentDescription = null
+                            ) 
+                        },
+                        modifier = Modifier.clickable { expanded = !expanded },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                    CompactSliderSetting(
-                        label = "Возраст",
-                        value = settings.age.toFloat(),
-                        valueRange = 10f..90f,
-                        steps = 79,
-                        display = { "${it.roundToInt()} лет" },
-                        onValueChange = { v -> vm.updateSettings { it.copy(age = v.roundToInt()) } }
-                    )
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                    CompactEnumDropdown(
-                        label = "Пол (для расчета пульса)",
-                        current = settings.isMale,
-                        options = listOf(true, false),
-                        optionLabel = { if (it) "Мужской" else "Женский" },
-                        onSelect = { v -> vm.updateSettings { it.copy(isMale = v) } }
-                    )
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                    CompactSliderSetting(
-                        label = "Пульс в покое",
-                        value = settings.restingHr.toFloat(),
-                        valueRange = 40f..100f,
-                        steps = 59,
-                        display = { "${it.roundToInt()} уд/мин" },
-                        onValueChange = { v -> vm.updateSettings { it.copy(restingHr = v.roundToInt()) } }
-                    )
+                    
+                    AnimatedVisibility(visible = expanded) {
+                        Column {
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                            CompactSliderSetting(
+                                label = "Вес",
+                                value = settings.weightKg.toFloat(),
+                                valueRange = 40f..150f,
+                                steps = 109,
+                                display = { "${it.roundToInt()} кг" },
+                                onValueChange = { v -> vm.updateSettings { it.copy(weightKg = v.roundToInt().toDouble()) } }
+                            )
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                            CompactSliderSetting(
+                                label = "Возраст",
+                                value = settings.age.toFloat(),
+                                valueRange = 10f..90f,
+                                steps = 79,
+                                display = { "${it.roundToInt()} лет" },
+                                onValueChange = { v -> vm.updateSettings { it.copy(age = v.roundToInt()) } }
+                            )
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                            CompactEnumDropdown(
+                                label = "Пол (для расчета пульса)",
+                                current = settings.isMale,
+                                options = listOf(true, false),
+                                optionLabel = { if (it) "Мужской" else "Женский" },
+                                onSelect = { v -> vm.updateSettings { it.copy(isMale = v) } }
+                            )
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                            CompactSliderSetting(
+                                label = "Пульс в покое",
+                                value = settings.restingHr.toFloat(),
+                                valueRange = 40f..100f,
+                                steps = 59,
+                                display = { "${it.roundToInt()} уд/мин" },
+                                onValueChange = { v -> vm.updateSettings { it.copy(restingHr = v.roundToInt()) } }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -353,8 +400,9 @@ fun SettingsScreen(
     }
 }
 
-// ... (Остальные компоненты: SettingsGroup, CompactSwitchRow, CompactEnumDropdown, CompactSliderSetting, CompactActionRow, ExpandableAdvanced — оставить без изменений, они стандартные)
-// Я продублирую их ниже для полноты файла.
+// ================================================================
+//  Современные компактные компоненты
+// ================================================================
 
 @Composable
 private fun SettingsGroup(title: String, icon: ImageVector, content: @Composable () -> Unit) {
