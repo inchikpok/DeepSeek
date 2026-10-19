@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.custom.treadmill.TreadmillApp
 import com.custom.treadmill.data.database.WorkoutLogEntity
 import com.custom.treadmill.ui.components.HeartRateChart
 import com.custom.treadmill.ui.components.HrPoint
@@ -59,6 +60,9 @@ fun HistoryScreen(programVm: ProgramViewModel, onBack: (() -> Unit)? = null) {
     var tab by rememberSaveable { mutableStateOf(0) }   // 0=Список, 1=Статистика
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
+
+    // Достаем актуальный максимальный пульс из настроек для графика
+    val maxHr = TreadmillApp.instance.settingsStore.settings.value.maxHr
 
     Column(Modifier.fillMaxSize()) {
         // ---------- Шапка ----------
@@ -134,7 +138,7 @@ fun HistoryScreen(programVm: ProgramViewModel, onBack: (() -> Unit)? = null) {
         } else if (tab == 0) {
             LogsList(logs)
         } else {
-            StatsView(logs)
+            StatsView(logs, maxHr)
         }
     }
 
@@ -204,7 +208,7 @@ private fun LogsList(logs: List<WorkoutLogEntity>) {
 }
 
 @Composable
-private fun StatsView(logs: List<WorkoutLogEntity>) {
+private fun StatsView(logs: List<WorkoutLogEntity>, maxHr: Int) {
     val withHr = remember(logs) {
         logs.filter { it.avgHeartRate > 0 }.sortedBy { it.dateMillis }
     }
@@ -241,13 +245,15 @@ private fun StatsView(logs: List<WorkoutLogEntity>) {
         ChartCard(
             title = "Средний пульс по тренировкам",
             subtitle = "${withHr.size} тренировок",
-            points = withHr.map { HrPoint(it.dateMillis, it.avgHeartRate) }
+            points = withHr.map { HrPoint(it.dateMillis, it.avgHeartRate) },
+            maxHr = maxHr
         )
         Spacer(Modifier.height(12.dp))
         ChartCard(
             title = "Максимальный пульс по тренировкам",
             subtitle = "Пик за тренировку",
-            points = withHr.map { HrPoint(it.dateMillis, it.maxHeartRate) }
+            points = withHr.map { HrPoint(it.dateMillis, it.maxHeartRate) },
+            maxHr = maxHr
         )
         Spacer(Modifier.height(20.dp))
     }
@@ -362,7 +368,8 @@ private fun HeartSummaryCard(logs: List<WorkoutLogEntity>) {
 private fun ChartCard(
     title: String,
     subtitle: String,
-    points: List<HrPoint>
+    points: List<HrPoint>,
+    maxHr: Int // <--- Добавлен параметр
 ) {
     Card(
         Modifier.fillMaxWidth(),
@@ -381,6 +388,7 @@ private fun ChartCard(
             HeartRateChart(
                 points = points,
                 targetHr = 0,
+                maxHr = maxHr, // <--- Передаем в график
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp)
