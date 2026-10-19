@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -57,7 +58,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.custom.treadmill.data.repository.AppSettings
 import com.custom.treadmill.data.repository.HrMode
 import com.custom.treadmill.data.repository.ThemeMode
 import com.custom.treadmill.logic.HeartRateZoneCalculator
