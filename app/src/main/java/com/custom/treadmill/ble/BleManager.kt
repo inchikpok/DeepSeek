@@ -87,7 +87,7 @@ class BleManager(private val context: Context) {
             return
         }
 
-        // [ФИКС] Принудительно останавливаем старое сканирование перед новым
+        // [ФИКС] Принудительно сбрасываем старый сканер
         try {
             scanner.stopScan(scanCallback)
         } catch (_: Exception) {}
@@ -106,7 +106,6 @@ class BleManager(private val context: Context) {
     }
 
     fun stopScan() {
-        // Вызываем stopScan даже если флаг scanning = false, чтобы очистить стек
         try { adapter?.bluetoothLeScanner?.stopScan(scanCallback) } catch (_: Exception) {}
         scanning = false
         _scanLog.tryEmit("Сканирование остановлено")
