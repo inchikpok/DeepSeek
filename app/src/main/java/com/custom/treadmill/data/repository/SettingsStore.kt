@@ -15,6 +15,7 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val keepScreenOn: Boolean = true,
+    val ttsEnabled: Boolean = true, // [НОВОЕ] Голосовые подсказки
     
     // Профиль спортсмена
     val weightKg: Double = 75.0,
