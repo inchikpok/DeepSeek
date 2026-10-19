@@ -22,15 +22,11 @@
         android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="30" />
 
-    <!--
-        ВАЖНО: разрешение android.permission.INTERNET НАМЕРЕННО отсутствует.
-        Приложение работает полностью офлайн.
-    -->
-
     <application
         android:name=".TreadmillApp"
-        android:allowBackup="true"
-        android:icon="@drawable/ic_launcher"
+        android:allowBackup="false" 
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Treadmill Control"
         android:supportsRtl="true"
         android:theme="@style/Theme.TreadmillControl">
