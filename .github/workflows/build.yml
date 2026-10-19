@@ -1,8 +1,6 @@
-yaml
-
 name: Build APK
 
-on:
+'on':
   push:
     branches: [ main, master ]
   workflow_dispatch:
@@ -31,10 +29,9 @@ jobs:
 
       - name: Inject version code
         run: |
-          # Меняем versionCode на номер запуска CI
           sed -i "s/versionCode = .*/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
           sed -i "s/versionName = .*/versionName = \"2.0.${{ github.run_number }}\"/" app/build.gradle.kts
-          
+
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --no-configuration-cache
 
@@ -52,13 +49,12 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk \
              "artifacts/TreadmillControl-${{ steps.version.outputs.name }}.apk"
 
-      - name: Upload artifact (запасной вариант — zip)
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: treadmill-debug-apk
           path: artifacts/TreadmillControl-${{ steps.version.outputs.name }}.apk
 
-      # Создаем релиз только если запущено вручную через workflow_dispatch
       - name: Create GitHub Release
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
