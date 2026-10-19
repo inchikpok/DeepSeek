@@ -81,13 +81,6 @@ class FTMSProtocol : ITreadmillProtocol {
         return controlFound
     }
 
-    /**
-     * Retry ТОЛЬКО для скорости.
-     *
-     * Наклон НЕ ретраим: belt применяет его с задержкой 5-10 сек, но
-     * применяет. Ретрай через 5 сек срабатывает раньше, чем belt
-     * обновит состояние — только шумит и пищат каждые 5 секунд.
-     */
     private fun startRetryLoop() {
         if (retryJob?.isActive == true) return
         retryJob = scope.launch {
@@ -97,9 +90,7 @@ class FTMSProtocol : ITreadmillProtocol {
                 val beltSpeed = _data.value.speedKmh
 
                 val speedTarget = lastRequestedSpeed
-                if (beltSpeed >= 0.5 && speedTarget >= 0.5 &&
-                    now - lastSpeedSentAt >= 5000L
-                ) {
+                if (beltSpeed >= 0.5 && speedTarget >= 0.5 && now - lastSpeedSentAt >= 5000L) {
                     if (abs(beltSpeed - speedTarget) >= 0.5) {
                         sendSpeedRaw(speedTarget)
                         lastSpeedSentAt = now
@@ -123,11 +114,7 @@ class FTMSProtocol : ITreadmillProtocol {
         val c = conn ?: return
         val raw = (speedKmh * 100.0).roundToInt().coerceIn(0, 65535)
         sendMutex.withLock {
-            c.write(
-                uuid,
-                byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()),
-                true
-            )
+            c.write(uuid, byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
         }
     }
 
@@ -136,11 +123,7 @@ class FTMSProtocol : ITreadmillProtocol {
         val c = conn ?: return
         val raw = (percent * 10.0).roundToInt().coerceIn(0, 32767)
         sendMutex.withLock {
-            c.write(
-                uuid,
-                byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()),
-                true
-            )
+            c.write(uuid, byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
         }
     }
 
@@ -207,21 +190,13 @@ class FTMSProtocol : ITreadmillProtocol {
     }
 
     override suspend fun setIncline(percent: Double): Boolean {
-        val t = if (roundInclineToWhole)
-            percent.coerceIn(0.0, 30.0).roundToInt().toDouble()
-        else percent.coerceIn(0.0, 30.0)
-
-        // Оптимистично обновляем UI. Belt медленный (5-10 сек), но применяет
-        // всегда. Если бы ждали подтверждения — retry срабатывал бы раньше
-        // belt'а и пищал каждые 5 сек.
+        val t = if (roundInclineToWhole) percent.coerceIn(0.0, 30.0).roundToInt().toDouble() else percent.coerceIn(0.0, 30.0)
         _data.value = _data.value.copy(inclinePercent = t)
-
         val beltRunning = _data.value.speedKmh >= 0.5
         if (!beltRunning) {
             log("наклон $t% (сохранено, belt стоит)")
             return true
         }
-
         sendInclineRaw(t)
         log("наклон $t%")
         return true
@@ -230,8 +205,7 @@ class FTMSProtocol : ITreadmillProtocol {
     override fun onNotification(n: BleNotification) {
         when (n.characteristicUuid) {
             Uuids.FTMS_TREADMILL_DATA -> parseTreadmillData(n.value)
-            Uuids.FTMS_CONTROL_POINT,
-            Uuids.FTMS_CONTROL_POINT_ALT -> parseControlPointResponse(n.value)
+            Uuids.FTMS_CONTROL_POINT, Uuids.FTMS_CONTROL_POINT_ALT -> parseControlPointResponse(n.value)
         }
     }
 
@@ -243,14 +217,6 @@ class FTMSProtocol : ITreadmillProtocol {
         }
     }
 
-    /**
-     * Разбор Treadmill Data (0x2ACD).
-     *
-     * ВАЖНО: если флаг incline (bit 3) отсутствует → incline = 0.
-     * Belt НЕ присылает incline = 0 в флаге — он просто отбрасывает бит.
-     * Если считать «нет флага = сохраняем прошлое» — incline застревает
-     * на последнем ненулевом значении, и retry сходит с ума.
-     */
     private fun parseTreadmillData(b: ByteArray) {
         if (b.size < 4) return
         try {
@@ -259,7 +225,7 @@ class FTMSProtocol : ITreadmillProtocol {
             val prev = _data.value
 
             var speed = prev.speedKmh
-            var incline = 0.0  // по умолчанию 0, обновится если флаг есть
+            var incline = 0.0
             var distance = prev.distanceKm
             var calories = prev.calories
             var elapsed = prev.elapsedSec
@@ -275,10 +241,14 @@ class FTMSProtocol : ITreadmillProtocol {
                 o += 3
             }
             if (flags and (1 shl 3) != 0) {
-                if (o + 4 <= b.size) incline = s16(b, o) / 10.0
-                o += 4
+                // [ФИКС 14] Inclination - sint16 (2 байта), а не 4
+                if (o + 2 <= b.size) incline = s16(b, o) / 10.0
+                o += 2 
             }
-            if (flags and (1 shl 4) != 0) o += 4
+            if (flags and (1 shl 4) != 0) {
+                // [ФИКС 14] Elevation Gain - sint16 (2 байта)
+                o += 2 
+            }
             if (flags and (1 shl 5) != 0) o += 1
             if (flags and (1 shl 6) != 0) o += 1
             if (flags and (1 shl 7) != 0) {
@@ -295,30 +265,16 @@ class FTMSProtocol : ITreadmillProtocol {
                 o += 2
             }
 
-            _data.value = TreadmillData(
-                speedKmh = speed,
-                inclinePercent = incline,
-                distanceKm = distance,
-                calories = calories,
-                elapsedSec = elapsed,
-                heartRate = hr,
-                isRunning = speed > 0.05
-            )
+            _data.value = TreadmillData(speed, incline, distance, calories, elapsed, hr, isRunning = speed > 0.05)
         } catch (e: Exception) {
             Log.w("FTMS", "Ошибка разбора: ${e.message}")
         }
     }
 
-    private fun u16(b: ByteArray, o: Int): Int =
-        (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
-
+    private fun u16(b: ByteArray, o: Int): Int = (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
     private fun s16(b: ByteArray, o: Int): Int {
         val raw = u16(b, o)
         return if (raw >= 0x8000) raw - 0x10000 else raw
     }
-
-    private fun u24(b: ByteArray, o: Int): Int =
-        (b[o].toInt() and 0xFF) or
-                ((b[o + 1].toInt() and 0xFF) shl 8) or
-                ((b[o + 2].toInt() and 0xFF) shl 16)
+    private fun u24(b: ByteArray, o: Int): Int = (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8) or ((b[o + 2].toInt() and 0xFF) shl 16)
 }
