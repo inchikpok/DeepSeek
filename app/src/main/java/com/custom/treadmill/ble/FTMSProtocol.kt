@@ -123,8 +123,8 @@ class FTMSProtocol : ITreadmillProtocol {
         val c = conn ?: return
         val raw = (percent * 10.0).roundToInt().coerceIn(0, 32767)
         sendMutex.withLock {
-            // [ФИКС] Для твоей дорожки наклон - это команда 0x04, а не 0x03
-            c.write(uuid, byteArrayOf(0x04, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
+            // Возвращаем стандартную команду 0x03 (лог подтвердил, что она работает)
+            c.write(uuid, byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
         }
     }
 
@@ -168,9 +168,10 @@ class FTMSProtocol : ITreadmillProtocol {
         }
 
         sendMutex.withLock {
-            conn?.write(uuid, byteArrayOf(0x02, 0x00, 0x00), true)
+            // [ФИКС] Используем команду 08 01, которая сбрасывает таймер на дорожке!
+            conn?.write(uuid, byteArrayOf(0x08, 0x01), true)
         }
-        log("стоп (02 00 00)")
+        log("стоп (08 01)")
         return true
     }
 
@@ -192,7 +193,6 @@ class FTMSProtocol : ITreadmillProtocol {
 
     override suspend fun setIncline(percent: Double): Boolean {
         val t = if (roundInclineToWhole) percent.coerceIn(0.0, 30.0).roundToInt().toDouble() else percent.coerceIn(0.0, 30.0)
-        // Не обновляем UI оптимистично, ждем пока дорожка реально пришлет новый наклон
         val beltRunning = _data.value.speedKmh >= 0.5
         if (!beltRunning) {
             log("наклон $t% (сохранено, belt стоит)")
