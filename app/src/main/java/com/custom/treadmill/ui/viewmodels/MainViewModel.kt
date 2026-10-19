@@ -7,6 +7,11 @@ import com.custom.treadmill.TreadmillApp
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.repository.AppSettings
 import com.custom.treadmill.data.repository.HrMode
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+enum class ScanMode { NONE, TREADMILL, HEART_RATE }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -35,7 +40,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val scanResults = TreadmillApp.instance.bleManager.scanResults
     val scanLog = TreadmillApp.instance.bleManager.scanLog
 
-    fun showMessage(msg: String) = session.showMessage(msg) // Или через statusMessage
+    // Восстановили ScanMode
+    private val _scanMode = MutableStateFlow(ScanMode.NONE)
+    val scanMode: StateFlow<ScanMode> = _scanMode.asStateFlow()
+
+    fun showMessage(msg: String) = session.showMessage(msg)
     fun clearStatusMessage() = session.clearStatusMessage()
 
     fun connectTreadmill(device: BluetoothDevice) = session.connectTreadmill(device)
@@ -57,6 +66,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun togglePauseWorkout() = session.togglePauseWorkout()
     fun stopWorkout() = session.stopWorkout()
     fun skipWorkoutSegment() = session.skipWorkoutSegment()
+    
+    // Восстановили saveWorkoutLog
+    fun saveWorkoutLog() = session.saveWorkoutLog()
 
     fun sendRawHex(hex: String): Boolean = session.sendRawHex(hex)
     
@@ -65,9 +77,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.update(transform)
     fun setHrMode(mode: HrMode) = settingsStore.update { it.copy(hrMode = mode) }
     
-    fun startScanTreadmill() = session.startScanTreadmill()
-    fun startScanHeartRate() = session.startScanHeartRate()
-    fun stopScan() = session.stopScan()
+    // Восстановили управление сканированием
+    fun startScanTreadmill() { _scanMode.value = ScanMode.TREADMILL; session.startScanTreadmill() }
+    fun startScanHeartRate() { _scanMode.value = ScanMode.HEART_RATE; session.startScanHeartRate() }
+    fun stopScan() { _scanMode.value = ScanMode.NONE; session.stopScan() }
     
     fun clearLogs() = session.clearLogs()
 }
