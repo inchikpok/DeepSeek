@@ -1,3 +1,5 @@
+yaml
+
 name: Build APK
 
 on:
@@ -27,6 +29,12 @@ jobs:
         with:
           gradle-version: '8.6'
 
+      - name: Inject version code
+        run: |
+          # Меняем versionCode на номер запуска CI
+          sed -i "s/versionCode = .*/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
+          sed -i "s/versionName = .*/versionName = \"2.0.${{ github.run_number }}\"/" app/build.gradle.kts
+          
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --no-configuration-cache
 
@@ -35,10 +43,8 @@ jobs:
         run: |
           VERSION_NAME=$(grep -E 'versionName' app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
           VERSION_CODE=$(grep -E 'versionCode' app/build.gradle.kts | head -1 | sed -E 's/[^0-9]*([0-9]+).*/\1/')
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
           echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "tag=v${VERSION_NAME}-${TIMESTAMP}" >> $GITHUB_OUTPUT
 
       - name: Rename APK
         run: |
@@ -52,10 +58,12 @@ jobs:
           name: treadmill-debug-apk
           path: artifacts/TreadmillControl-${{ steps.version.outputs.name }}.apk
 
+      # Создаем релиз только если запущено вручную через workflow_dispatch
       - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
+          tag_name: v${{ steps.version.outputs.name }}
           name: "Treadmill Control ${{ steps.version.outputs.name }} (build ${{ steps.version.outputs.code }})"
           body: |
             Автосборка из коммита ${{ github.sha }}.
