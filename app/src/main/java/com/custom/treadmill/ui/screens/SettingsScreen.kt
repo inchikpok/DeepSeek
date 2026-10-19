@@ -179,6 +179,13 @@ fun SettingsScreen(
                         checked = settings.keepScreenOn,
                         onChange = { v -> vm.updateSettings { it.copy(keepScreenOn = v) } }
                     )
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                    CompactSwitchRow(
+                        title = "Голосовые подсказки",
+                        subtitle = "Смена сегментов, 10 секунд, старт и финиш",
+                        checked = settings.ttsEnabled,
+                        onChange = { v -> vm.updateSettings { it.copy(ttsEnabled = v) } }
+                    )
                 }
             }
 
