@@ -1,7 +1,6 @@
 package com.custom.treadmill.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -195,8 +193,6 @@ fun SettingsScreen(
                         checked = settings.sendStartCommand,
                         onChange = { v -> vm.updateSettings { it.copy(sendStartCommand = v) } }
                     )
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                    ExpandableAdvanced(settings, vm)
                 }
             }
 
@@ -456,25 +452,4 @@ private fun CompactActionRow(icon: ImageVector, title: String, subtitle: String,
         modifier = Modifier.clickable(onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
-}
-
-@Composable
-private fun ExpandableAdvanced(settings: AppSettings, vm: MainViewModel) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    Column {
-        ListItem(
-            headlineContent = { Text("Дополнительно", fontSize = 15.sp) },
-            supportingContent = { Text("Ручные UUID характеристик", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-            trailingContent = { Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, contentDescription = null) },
-            modifier = Modifier.clickable { expanded = !expanded },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
-        AnimatedVisibility(visible = expanded) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).padding(bottom = 12.dp)) {
-                OutlinedTextField(value = settings.manualWriteUuid, onValueChange = { v -> vm.updateSettings { it.copy(manualWriteUuid = v) } }, label = { Text("UUID записи (опц.)", fontSize = 12.sp) }, textStyle = MaterialTheme.typography.bodySmall, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(value = settings.manualNotifyUuid, onValueChange = { v -> vm.updateSettings { it.copy(manualNotifyUuid = v) } }, label = { Text("UUID уведомлений (опц.)", fontSize = 12.sp) }, textStyle = MaterialTheme.typography.bodySmall, singleLine = true, modifier = Modifier.fillMaxWidth())
-            }
-        }
-    }
 }
