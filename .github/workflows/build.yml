@@ -27,25 +27,20 @@ jobs:
         with:
           gradle-version: '8.6'
 
-      - name: Restore Debug Keystore
-        uses: actions/cache/restore@v4
-        id: cache-keystore
+      # Сохраняем/восстанавливаем папку .android, где лежит ключ
+      - name: Cache Debug Keystore
+        uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: debug-keystore-v3
+          path: ~/.android
+          key: android-debug-keystore-v4
 
-      - name: Create Debug Keystore if not exists
-        if: steps.cache-keystore.outputs.cache-hit != 'true'
+      # Если ключа нет, создаем его
+      - name: Generate Debug Keystore
         run: |
-          mkdir -p ~/.android
-          keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-
-      - name: Save Debug Keystore
-        if: steps.cache-keystore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: debug-keystore-v3
+          if [ ! -f ~/.android/debug.keystore ]; then
+            mkdir -p ~/.android
+            keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Inject version code
         run: |
