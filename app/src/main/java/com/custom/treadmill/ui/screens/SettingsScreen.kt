@@ -187,7 +187,6 @@ fun SettingsScreen(
                         onValueChange = { v -> vm.updateSettings { it.copy(maxInclinePercent = v.roundToInt().toDouble()) } }
                     )
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                    // [ФИКС] Слайдер веса для расчета калорий
                     CompactSliderSetting(
                         label = "Вес для калорий",
                         value = settings.weightKg.toFloat(),
@@ -223,25 +222,6 @@ fun SettingsScreen(
                                     }
                                 },
                                 onSelect = { v -> vm.setHrMode(v) }
-                            // Внутри блока Автопульс:
-                            CompactSliderSetting(
-                                label = "Шаг скорости",
-                                value = settings.stepKmh.toFloat(),
-                                valueRange = 0.1f..2.0f,
-                                steps = 18,
-                                display = { "%.1f".format(it) },
-                                onValueChange = { v -> vm.updateSettings { it.copy(stepKmh = (v * 10).roundToInt() / 10.0) } }
-                            )
-                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                            // [НОВОЕ] Слайдер максимального пульса
-                            CompactSliderSetting(
-                                label = "Максимальный пульс (для графика)",
-                                value = settings.maxHr.toFloat(),
-                                valueRange = 150f..220f,
-                                steps = 69,
-                                display = { "${it.roundToInt()}" },
-                                onValueChange = { v -> vm.updateSettings { it.copy(maxHr = v.roundToInt()) } }
-                            )
                             )
 
                             if (settings.hrMode == HrMode.TARGET) {
@@ -304,6 +284,15 @@ fun SettingsScreen(
                                 steps = 18,
                                 display = { "%.1f".format(it) },
                                 onValueChange = { v -> vm.updateSettings { it.copy(stepKmh = (v * 10).roundToInt() / 10.0) } }
+                            )
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                            CompactSliderSetting(
+                                label = "Максимальный пульс (для графика)",
+                                value = settings.maxHr.toFloat(),
+                                valueRange = 150f..220f,
+                                steps = 69,
+                                display = { "${it.roundToInt()}" },
+                                onValueChange = { v -> vm.updateSettings { it.copy(maxHr = v.roundToInt()) } }
                             )
                         }
                     }
