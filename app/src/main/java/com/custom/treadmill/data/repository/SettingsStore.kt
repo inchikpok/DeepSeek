@@ -17,15 +17,11 @@ data class AppSettings(
     val protocol: ProtocolType = ProtocolType.FTMS,
     val manualWriteUuid: String = "",
     val manualNotifyUuid: String = "",
-
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-
-    /**
-     * Не гасить экран. На экране тренировки включено всегда
-     * (пользователь смотрит на метрики), а на главном — только когда
-     * belt едет или на паузе (иначе разряжает батарею).
-     */
     val keepScreenOn: Boolean = true,
+    
+    // [ФИКС] Добавлен вес для расчета калорий
+    val weightKg: Double = 75.0,
 
     val minSpeedKmh: Double = 1.0,
     val maxSpeedKmh: Double = 20.0,
@@ -39,15 +35,8 @@ data class AppSettings(
     val thresholdLow: Int = 5,
     val intervalSec: Int = 30,
     val stepKmh: Double = 0.5,
-
-    /** Шаг кнопок +/− скорости на главном и на экране тренировки. */
     val speedStepKmh: Double = 0.5,
-
-    /** Отправлять 0x07 в start(). */
-    val sendStartCommand: Boolean = true,
-
-    /** Повтор скорости (сек). 0 = выключено. */
-    val speedKeepAliveSec: Int = 0
+    val sendStartCommand: Boolean = true
 )
 
 class SettingsStore(context: Context) {
