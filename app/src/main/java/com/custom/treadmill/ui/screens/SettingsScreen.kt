@@ -61,7 +61,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.custom.treadmill.data.repository.AppSettings
 import com.custom.treadmill.data.repository.HrMode
-import com.custom.treadmill.data.repository.ProtocolType
 import com.custom.treadmill.data.repository.ThemeMode
 import com.custom.treadmill.logic.HeartRateZoneCalculator
 import com.custom.treadmill.ui.viewmodels.MainViewModel
@@ -190,19 +189,6 @@ fun SettingsScreen(
             // ================= Оборудование =================
             item {
                 SettingsGroup(title = "Оборудование", icon = Icons.Outlined.SettingsBluetooth) {
-                    CompactEnumDropdown(
-                        label = "Протокол управления",
-                        current = settings.protocol,
-                        options = ProtocolType.values().toList(),
-                        optionLabel = {
-                            when (it) {
-                                ProtocolType.FTMS -> "FTMS (стандартный)"
-                                ProtocolType.FITSHOW -> "FitShow (proprietary)"
-                            }
-                        },
-                        onSelect = { v -> vm.setProtocolType(v) }
-                    )
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                     CompactSwitchRow(
                         title = "Команда Start (0x07)",
                         subtitle = "Не выключайте — дорожка не поедет",
