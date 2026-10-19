@@ -48,8 +48,8 @@ fun ProgramsScreen(
 
     var editingId by remember { mutableStateOf(-1L) }
     var editingData by remember { mutableStateOf<ProgramData?>(null) }
-    var exportTarget by remember { mutableStateOf<ProgramData?>(null) } // [ФИКС 20]
-    var deleteTarget by remember { mutableStateOf<ProgramEntity?>(null) } // [ФИКС 21]
+    var exportTarget by remember { mutableStateOf<ProgramData?>(null) }
+    var deleteTarget by remember { mutableStateOf<ProgramEntity?>(null) }
     
     var showTemplates by remember { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -60,12 +60,14 @@ fun ProgramsScreen(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        val data = exportTarget ?: return@rememberLauncherForActivityResult // [ФИКС 20]
+        val data = exportTarget ?: return@rememberLauncherForActivityResult
         try {
             ctx.contentResolver.openOutputStream(uri)?.use { os ->
                 os.write(programVm.exportJson(data).toByteArray(Charsets.UTF_8))
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            mainVm.showMessage("Ошибка сохранения файла: ${e.message}")
+        }
     }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -76,9 +78,24 @@ fun ProgramsScreen(
             val text = ctx.contentResolver.openInputStream(uri)
                 ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                 ?: return@rememberLauncherForActivityResult
+            
             val data = programVm.importJson(text)
+            
+            // Валидация импортированной программы
+            if (data.name.isBlank() || data.segments.isEmpty()) {
+                mainVm.showMessage("Ошибка: файл не содержит программы")
+                return@rememberLauncherForActivityResult
+            }
+            if (data.segments.any { it.durationSec <= 0 || it.speedKmh <= 0 }) {
+                mainVm.showMessage("Ошибка: найдены сегменты с нулевым временем или скоростью")
+                return@rememberLauncherForActivityResult
+            }
+            
             programVm.save(data)
-        } catch (_: Exception) {}
+            mainVm.showMessage("Программа «${data.name}» импортирована")
+        } catch (e: Exception) {
+            mainVm.showMessage("Ошибка чтения файла: ${e.message}")
+        }
     }
 
     val visible = remember(programs, searchQuery, sortMode) {
@@ -169,7 +186,6 @@ fun ProgramsScreen(
                             programVm.save(copy, 0L)
                         },
                         onDelete = { 
-                            // [ФИКС 21] Проверяем, не запущена ли программа
                             if (workoutState.running && workoutState.programName == p.name) {
                                 mainVm.showMessage("Нельзя удалить запущенную программу")
                             } else {
@@ -177,7 +193,7 @@ fun ProgramsScreen(
                             }
                         },
                         onExport = {
-                            exportTarget = data // [ФИКС 20]
+                            exportTarget = data
                             exportLauncher.launch("${p.name}.json")
                         },
                         onStart = {
@@ -219,7 +235,6 @@ fun ProgramsScreen(
         )
     }
 
-    // [ФИКС 21] Диалог подтверждения удаления
     deleteTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
@@ -237,6 +252,7 @@ fun ProgramsScreen(
         ProgramEditorScreen(
             initial = data,
             isNew = isNew,
+            onShowMessage = { mainVm.showMessage(it) }, // Передаем метод для вывода ошибок
             onSave = { newData ->
                 programVm.save(newData, if (isNew) 0L else editingId)
                 editingData = null
@@ -389,7 +405,13 @@ private data class SegmentEdit(val name: String = "", val durationSec: Int = 60,
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProgramEditorScreen(initial: ProgramData, isNew: Boolean, onSave: (ProgramData) -> Unit, onDismiss: () -> Unit) {
+private fun ProgramEditorScreen(
+    initial: ProgramData, 
+    isNew: Boolean, 
+    onShowMessage: (String) -> Unit,
+    onSave: (ProgramData) -> Unit, 
+    onDismiss: () -> Unit
+) {
     val segments = remember(initial) {
         mutableStateListOf<SegmentEdit>().apply {
             initial.segments.forEach { s ->
@@ -415,8 +437,16 @@ private fun ProgramEditorScreen(initial: ProgramData, isNew: Boolean, onSave: (P
                         navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = "Закрыть") } },
                         actions = {
                             TextButton(onClick = {
-                                if (segments.isEmpty()) return@TextButton
-                                onSave(ProgramData(name.ifBlank { "Без названия" }, description, segments.map { ProgramSegment(it.durationSec, it.speedKmh, it.inclinePercent, it.name.ifBlank { "Сегмент" }) }))
+                                // Валидация перед сохранением
+                                if (name.isBlank()) {
+                                    onShowMessage("Введите название программы")
+                                    return@TextButton
+                                }
+                                if (segments.isEmpty() || segments.any { it.durationSec <= 0 || it.speedKmh <= 0 }) {
+                                    onShowMessage("Проверьте сегменты: время и скорость должны быть больше нуля")
+                                    return@TextButton
+                                }
+                                onSave(ProgramData(name, description, segments.map { ProgramSegment(it.durationSec, it.speedKmh, it.inclinePercent, it.name.ifBlank { "Сегмент" }) }))
                             }) { Text("Сохранить", fontWeight = FontWeight.Bold) }
                         }
                     )
