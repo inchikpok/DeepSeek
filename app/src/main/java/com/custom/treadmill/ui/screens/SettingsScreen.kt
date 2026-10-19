@@ -186,6 +186,16 @@ fun SettingsScreen(
                         display = { "${it.roundToInt()} %" },
                         onValueChange = { v -> vm.updateSettings { it.copy(maxInclinePercent = v.roundToInt().toDouble()) } }
                     )
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                    // [ФИКС] Слайдер веса для расчета калорий
+                    CompactSliderSetting(
+                        label = "Вес для калорий",
+                        value = settings.weightKg.toFloat(),
+                        valueRange = 40f..150f,
+                        steps = 109,
+                        display = { "${it.roundToInt()} кг" },
+                        onValueChange = { v -> vm.updateSettings { it.copy(weightKg = v.roundToInt().toDouble()) } }
+                    )
                 }
             }
 
@@ -322,7 +332,6 @@ private fun SettingsGroup(
     content: @Composable () -> Unit
 ) {
     Column(Modifier.fillMaxWidth()) {
-        // Заголовок группы
         Row(
             Modifier.padding(start = 4.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -341,7 +350,6 @@ private fun SettingsGroup(
                 color = MaterialTheme.colorScheme.primary
             )
         }
-        // Сама карточка с настройками
         Card(
             Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -428,7 +436,6 @@ private fun CompactSliderSetting(
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
-            // Компактный бейдж со значением
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(6.dp)
@@ -448,7 +455,7 @@ private fun CompactSliderSetting(
             onValueChange = onValueChange,
             valueRange = valueRange,
             steps = steps,
-            modifier = Modifier.height(24.dp) // Уменьшаем высоту самого слайдера
+            modifier = Modifier.height(24.dp)
         )
     }
 }
