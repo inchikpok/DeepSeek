@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ProgramEntity::class, WorkoutLogEntity::class],
@@ -18,13 +20,20 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        // Сюда будем добавлять миграции в будущем, например:
+        // val MIGRATION_1_2 = object : Migration(1, 2) { ... }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "treadmill.db"
-                ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
+                )
+                // ВАЖНО: Мы убрали fallbackToDestructiveMigration()
+                // Теперь при изменении схемы без миграции приложение упадет,
+                // но НЕ сотрет данные пользователя молча.
+                .build().also { INSTANCE = it }
             }
     }
 }
