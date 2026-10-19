@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.util.UUID
 import kotlin.math.abs
 
 enum class ScanMode { NONE, TREADMILL, HEART_RATE }
@@ -39,6 +38,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var protocol: FTMSProtocol? = null
     private val hrService = HeartRateService()
 
+    // Джобы для управления корутинами подключения
     private var treadmillStateJob: Job? = null
     private var treadmillNotifyJob: Job? = null
     private var treadmillLogJob: Job? = null
@@ -108,7 +108,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val workoutState = workoutManager.state
 
     private var hrAutoJob: Job? = null
-    private var settingsCollectorJob: Job? = null
     private var workoutLogSaved = false
 
     private var hrSum = 0L; private var hrCount = 0L; private var hrMax = 0
@@ -229,22 +228,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun onTreadmillReady(conn: BleConnection) {
         viewModelScope.launch {
-            val s = settingsStore.settings.value
-            
-            // Всегда FTMS
+            // Всегда FTMS и всегда включенная команда 0x07 (намертво)
             val p = FTMSProtocol().apply {
-                sendStartCommand = s.sendStartCommand
+                sendStartCommand = true
                 onLog = { msg -> addLog(msg) }
             }
             protocol = p
             addLog("Протокол: ${p.protocolName}")
-
-            settingsCollectorJob?.cancel()
-            settingsCollectorJob = viewModelScope.launch {
-                settingsStore.settings.collect { newS ->
-                    p.sendStartCommand = newS.sendStartCommand
-                }
-            }
 
             viewModelScope.launch { p.data.collect { _treadmillData.value = it } }
             val ok = p.initialize(conn)
@@ -260,9 +250,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun disconnectTreadmill() {
-        settingsCollectorJob?.cancel()
-        settingsCollectorJob = null
-        
         treadmillStateJob?.cancel()
         treadmillNotifyJob?.cancel()
         treadmillLogJob?.cancel()
