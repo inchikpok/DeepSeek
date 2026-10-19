@@ -72,12 +72,10 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     var hexInput by rememberSaveable { mutableStateOf("02 96 00") }
     var savedMessage by remember { mutableStateOf<String?>(null) }
     var tab by rememberSaveable { mutableStateOf(0) }
-    /** Скрывать служебные кадры Treadmill Data (2ACD) — 95% объёма лога. */
     var hideTreadmillFrames by rememberSaveable { mutableStateOf(true) }
 
     val listState = rememberLazyListState()
 
-    // Отфильтрованный список для отображения в UI
     val visibleLogs = remember(logs, hideTreadmillFrames) {
         if (hideTreadmillFrames) logs.filter { !it.contains("<- 00002acd") }
         else logs
@@ -94,8 +92,8 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         try {
-            // Экспортируем ПОЛНЫЙ лог (все записи, без фильтра)
-            val content = buildLogContent(logs, treadmillState.toString(), settings.protocol.toString())
+            // [ФИКС] Передаем "FTMS" вместо удаленного settings.protocol
+            val content = buildLogContent(logs, treadmillState.toString(), "FTMS")
             ctx.contentResolver.openOutputStream(uri)?.use { os ->
                 os.write(content.toByteArray(Charsets.UTF_8))
             }
@@ -108,7 +106,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().padding(12.dp)) {
 
-            // ---------- Шапка ----------
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -125,11 +122,7 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                             .format(Date())
                         saveLauncher.launch("treadmill_log_$ts.txt")
                     }) {
-                        Icon(
-                            Icons.Default.Save,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Сохранить")
                     }
@@ -139,9 +132,7 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
             savedMessage?.let {
                 Card(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                    )
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
                 ) {
                     Row(
                         Modifier.fillMaxWidth().padding(8.dp),
@@ -153,16 +144,13 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // ---------- Статус ----------
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(10.dp)) {
                     Text("Дорожка: ${treadmillName ?: "—"}", fontSize = 12.sp)
                     Text("Состояние: $treadmillState", fontSize = 12.sp)
-                    Text("Протокол: ${settings.protocol}", fontSize = 12.sp)
+                    Text("Протокол: FTMS", fontSize = 12.sp) // [ФИКС] Убрали settings.protocol
                     Text(
-                        "Скорость: %.1f · Наклон: %.0f%%".format(
-                            data.speedKmh, data.inclinePercent
-                        ),
+                        "Скорость: %.1f · Наклон: %.0f%%".format(data.speedKmh, data.inclinePercent),
                         fontSize = 12.sp
                     )
                     Text(
@@ -174,7 +162,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Ручной ввод hex ----------
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(10.dp)) {
                     Text("Отправить команду (hex)", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -201,11 +188,7 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Табы ----------
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 TabButton("Лог", tab == 0) { tab = 0 }
                 TabButton("Справочник", tab == 1) { tab = 1 }
                 TabButton("Конструктор", tab == 2) { tab = 2 }
@@ -213,7 +196,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(6.dp))
 
-            // ---------- Контент таба ----------
             when (tab) {
                 0 -> LogView(
                     logs = visibleLogs,
@@ -241,61 +223,29 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     }
 }
 
-// =====================================================================
-//  Вспомогательные компоненты
-// =====================================================================
-
 @Composable
 private fun TabButton(text: String, selected: Boolean, onClick: () -> Unit) {
     if (selected) {
-        Button(
-            onClick = onClick,
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-        ) { Text(text, fontSize = 13.sp) }
+        Button(onClick = onClick, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) { Text(text, fontSize = 13.sp) }
     } else {
-        OutlinedButton(
-            onClick = onClick,
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-        ) { Text(text, fontSize = 13.sp) }
+        OutlinedButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) { Text(text, fontSize = 13.sp) }
     }
 }
 
 @Composable
-private fun LogView(
-    logs: List<String>,
-    listState: LazyListState,
-    hideTreadmillFrames: Boolean,
-    onToggleHide: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun LogView(logs: List<String>, listState: LazyListState, hideTreadmillFrames: Boolean, onToggleHide: () -> Unit, modifier: Modifier = Modifier) {
     Card(modifier) {
         Column(Modifier.fillMaxSize().padding(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Лог BLE",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    modifier = Modifier.weight(1f)
-                )
+                Text("Лог BLE", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Скрыть кадры 2ACD",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("Скрыть кадры 2ACD", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(4.dp))
-                    Switch(
-                        checked = hideTreadmillFrames,
-                        onCheckedChange = { onToggleHide() },
-                        modifier = Modifier.size(width = 40.dp, height = 24.dp)
-                    )
+                    Switch(checked = hideTreadmillFrames, onCheckedChange = { onToggleHide() }, modifier = Modifier.size(width = 40.dp, height = 24.dp))
                 }
             }
             Spacer(Modifier.height(4.dp))
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            ) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
                 items(logs.asReversed()) { line ->
                     Text(
                         line,
@@ -314,40 +264,19 @@ private fun LogView(
     }
 }
 
-// =====================================================================
-//  Справочник команд
-// =====================================================================
-
-private data class CmdEntry(
-    val label: String,
-    val hex: String,
-    val note: String = ""
-)
+private data class CmdEntry(val label: String, val hex: String, val note: String = "")
 
 private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
-    val speedsKmh = listOf(
-        0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0,
-        6.0, 7.0, 8.0, 10.0, 12.0, 15.0, 20.0
-    )
-
+    val speedsKmh = listOf(0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0, 15.0, 20.0)
     val speedChange = speedsKmh.map { kmh ->
         val raw = (kmh * 100).roundToInt()
-        CmdEntry(
-            label = "%.1f км/ч".format(kmh),
-            hex = "02 %02X %02X".format(raw and 0xFF, (raw shr 8) and 0xFF),
-            note = "Только на ходу"
-        )
+        CmdEntry("%.1f км/ч".format(kmh), "02 %02X %02X".format(raw and 0xFF, (raw shr 8) and 0xFF), "Только на ходу")
     }
-
     val inclines = listOf(0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15)
     val inclineCmds = inclines.map { p ->
         val raw = p * 10
-        CmdEntry(
-            label = "$p %",
-            hex = "03 %02X %02X".format(raw and 0xFF, (raw shr 8) and 0xFF)
-        )
+        CmdEntry("$p %", "03 %02X %02X".format(raw and 0xFF, (raw shr 8) and 0xFF))
     }
-
     return listOf(
         "Управление" to listOf(
             CmdEntry("Request Control", "00", "Запросить контроль"),
@@ -362,343 +291,136 @@ private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
 }
 
 @Composable
-private fun CommandReference(
-    treadmillReady: Boolean,
-    currentSpeedKmh: Double,
-    onSend: (String) -> Unit,
-    onStartBelt: () -> Unit,
-    onAdjustSpeed: (Double) -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun CommandReference(treadmillReady: Boolean, currentSpeedKmh: Double, onSend: (String) -> Unit, onStartBelt: () -> Unit, onAdjustSpeed: (Double) -> Unit, modifier: Modifier = Modifier) {
     val groups = remember { buildCommandReference() }
     var lastSent by remember { mutableStateOf<String?>(null) }
-
-    LazyColumn(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        contentPadding = PaddingValues(bottom = 12.dp)
-    ) {
+    LazyColumn(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
         if (!treadmillReady) {
             item {
-                Card(
-                    Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Text(
-                        "Дорожка не подключена — команды не отправятся",
-                        Modifier.padding(10.dp),
-                        fontSize = 12.sp
-                    )
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Text("Дорожка не подключена — команды не отправятся", Modifier.padding(10.dp), fontSize = 12.sp)
                 }
             }
         }
-
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text("Запустить belt", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Отправляет 00 → пауза → 07, belt отсчитает 3-2-1 и поедет на 1.0 км/ч.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("Отправляет 00 → пауза → 07, belt отсчитает 3-2-1 и поедет на 1.0 км/ч.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = onStartBelt,
-                        enabled = treadmillReady,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                    Button(onClick = onStartBelt, enabled = treadmillReady, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Запустить belt")
                     }
-
                     Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Быстрая регулировка (belt едет)",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp
-                    )
+                    Text("Быстрая регулировка (belt едет)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Текущая: %.1f км/ч".format(currentSpeedKmh),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("Текущая: %.1f км/ч".format(currentSpeedKmh), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(6.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { onAdjustSpeed(-1.0) },
-                            enabled = treadmillReady && currentSpeedKmh > 1.0,
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
-                        ) { Text("−1", fontSize = 12.sp) }
-                        OutlinedButton(
-                            onClick = { onAdjustSpeed(-0.5) },
-                            enabled = treadmillReady && currentSpeedKmh > 0.5,
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
-                        ) { Text("−0.5", fontSize = 12.sp) }
-                        Button(
-                            onClick = { onAdjustSpeed(0.5) },
-                            enabled = treadmillReady && currentSpeedKmh > 0.5,
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
-                        ) { Text("+0.5", fontSize = 12.sp) }
-                        Button(
-                            onClick = { onAdjustSpeed(1.0) },
-                            enabled = treadmillReady && currentSpeedKmh > 0.5,
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
-                        ) { Text("+1", fontSize = 12.sp) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        OutlinedButton(onClick = { onAdjustSpeed(-1.0) }, enabled = treadmillReady && currentSpeedKmh > 1.0, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)) { Text("−1", fontSize = 12.sp) }
+                        OutlinedButton(onClick = { onAdjustSpeed(-0.5) }, enabled = treadmillReady && currentSpeedKmh > 0.5, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)) { Text("−0.5", fontSize = 12.sp) }
+                        Button(onClick = { onAdjustSpeed(0.5) }, enabled = treadmillReady && currentSpeedKmh > 0.5, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)) { Text("+0.5", fontSize = 12.sp) }
+                        Button(onClick = { onAdjustSpeed(1.0) }, enabled = treadmillReady && currentSpeedKmh > 0.5, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)) { Text("+1", fontSize = 12.sp) }
                     }
                 }
             }
         }
-
         groups.forEach { (title, commands) ->
-            item {
-                Text(
-                    title,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
-                )
-            }
+            item { Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)) }
             items(commands) { cmd ->
-                Card(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = treadmillReady) {
-                            onSend(cmd.hex)
-                            lastSent = "${cmd.label} (${cmd.hex})"
-                        }
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                Card(Modifier.fillMaxWidth().clickable(enabled = treadmillReady) { onSend(cmd.hex); lastSent = "${cmd.label} (${cmd.hex})" }) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(cmd.label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            if (cmd.note.isNotBlank()) {
-                                Text(
-                                    cmd.note,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            if (cmd.note.isNotBlank()) Text(cmd.note, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text(
-                            cmd.hex,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Text(cmd.hex, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
         }
-
         item {
             lastSent?.let {
-                Card(
-                    Modifier.fillMaxWidth().padding(top = 6.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                    )
-                ) {
-                    Text(
-                        "Отправлено: $it",
-                        Modifier.padding(10.dp),
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+                Card(Modifier.fillMaxWidth().padding(top = 6.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+                    Text("Отправлено: $it", Modifier.padding(10.dp), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 }
             }
         }
     }
 }
 
-// =====================================================================
-//  Конструктор команд
-// =====================================================================
-
 @Composable
-private fun CommandConstructor(
-    treadmillReady: Boolean,
-    onSend: (String) -> Unit,
-    onStartBelt: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun CommandConstructor(treadmillReady: Boolean, onSend: (String) -> Unit, onStartBelt: () -> Unit, modifier: Modifier = Modifier) {
     var speedStr by rememberSaveable { mutableStateOf("3") }
     var inclineStr by rememberSaveable { mutableStateOf("2") }
     var lastSent by remember { mutableStateOf<String?>(null) }
-
     val speed = speedStr.replace(',', '.').toDoubleOrNull() ?: 0.0
     val incline = inclineStr.replace(',', '.').toDoubleOrNull() ?: 0.0
 
-    Column(
-        modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!treadmillReady) {
-            Card(
-                Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Text(
-                    "Дорожка не подключена — команды не отправятся",
-                    Modifier.padding(10.dp),
-                    fontSize = 12.sp
-                )
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                Text("Дорожка не подключена — команды не отправятся", Modifier.padding(10.dp), fontSize = 12.sp)
             }
         }
-
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("Запуск дорожки", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    "Старт с нуля требует раздельных write. Кнопка сделает всё правильно: " +
-                            "00 → пауза → 07, belt отсчитает 3-2-1 и поедет на 1.0 км/ч.",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text("Старт с нуля требует раздельных write. Кнопка сделает всё правильно: 00 → пауза → 07, belt отсчитает 3-2-1 и поедет на 1.0 км/ч.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = onStartBelt,
-                    enabled = treadmillReady,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                Button(onClick = onStartBelt, enabled = treadmillReady, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Запустить belt")
                 }
             }
         }
-
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("Скорость (belt должен ехать)", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = speedStr,
-                    onValueChange = { speedStr = it },
-                    label = { Text("км/ч (можно дробные, например 1.5)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = speedStr, onValueChange = { speedStr = it }, label = { Text("км/ч (можно дробные, например 1.5)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
-
                 val raw = (speed * 100).roundToInt().coerceIn(0, 65535)
                 val b1 = raw and 0xFF
                 val b2 = (raw shr 8) and 0xFF
                 val changeHex = "02 %02X %02X".format(b1, b2)
                 val stopHex = "02 00 00"
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            onSend(changeHex)
-                            lastSent = "speed=$speed ($changeHex)"
-                        },
-                        enabled = treadmillReady && speed > 0,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Применить", fontSize = 12.sp) }
-                    OutlinedButton(
-                        onClick = {
-                            onSend(stopHex)
-                            lastSent = "стоп ($stopHex)"
-                        },
-                        enabled = treadmillReady,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) { Text("Стоп", fontSize = 12.sp) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = { onSend(changeHex); lastSent = "speed=$speed ($changeHex)" }, enabled = treadmillReady && speed > 0, modifier = Modifier.weight(1f)) { Text("Применить", fontSize = 12.sp) }
+                    OutlinedButton(onClick = { onSend(stopHex); lastSent = "стоп ($stopHex)" }, enabled = treadmillReady, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Стоп", fontSize = 12.sp) }
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    changeHex,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text(changeHex, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("Наклон", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = inclineStr,
-                    onValueChange = { inclineStr = it },
-                    label = { Text("% (belt принимает целые)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = inclineStr, onValueChange = { inclineStr = it }, label = { Text("% (belt принимает целые)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
-
                 val raw = (incline * 10).roundToInt().coerceIn(0, 32767)
                 val b1 = raw and 0xFF
                 val b2 = (raw shr 8) and 0xFF
                 val hex = "03 %02X %02X".format(b1, b2)
-
-                Button(
-                    onClick = {
-                        onSend(hex)
-                        lastSent = "incline=$incline ($hex)"
-                    },
-                    enabled = treadmillReady,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Отправить наклон", fontSize = 13.sp) }
+                Button(onClick = { onSend(hex); lastSent = "incline=$incline ($hex)" }, enabled = treadmillReady, modifier = Modifier.fillMaxWidth()) { Text("Отправить наклон", fontSize = 13.sp) }
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    hex,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text(hex, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-
         lastSent?.let {
-            Card(
-                Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                )
-            ) {
-                Text(
-                    "Отправлено: $it",
-                    Modifier.padding(10.dp),
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+                Text("Отправлено: $it", Modifier.padding(10.dp), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
             }
         }
-
         Spacer(Modifier.height(12.dp))
     }
 }
-
-// =====================================================================
-//  Экспорт лога
-// =====================================================================
 
 private fun buildLogContent(logs: List<String>, state: String, protocol: String): String {
     val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
