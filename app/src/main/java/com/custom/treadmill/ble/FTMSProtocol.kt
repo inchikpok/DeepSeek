@@ -123,7 +123,8 @@ class FTMSProtocol : ITreadmillProtocol {
         val c = conn ?: return
         val raw = (percent * 10.0).roundToInt().coerceIn(0, 32767)
         sendMutex.withLock {
-            c.write(uuid, byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
+            // [ФИКС] Для твоей дорожки наклон - это команда 0x04, а не 0x03
+            c.write(uuid, byteArrayOf(0x04, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
         }
     }
 
@@ -191,7 +192,7 @@ class FTMSProtocol : ITreadmillProtocol {
 
     override suspend fun setIncline(percent: Double): Boolean {
         val t = if (roundInclineToWhole) percent.coerceIn(0.0, 30.0).roundToInt().toDouble() else percent.coerceIn(0.0, 30.0)
-        _data.value = _data.value.copy(inclinePercent = t)
+        // Не обновляем UI оптимистично, ждем пока дорожка реально пришлет новый наклон
         val beltRunning = _data.value.speedKmh >= 0.5
         if (!beltRunning) {
             log("наклон $t% (сохранено, belt стоит)")
@@ -241,14 +242,10 @@ class FTMSProtocol : ITreadmillProtocol {
                 o += 3
             }
             if (flags and (1 shl 3) != 0) {
-                // [ФИКС 14] Inclination - sint16 (2 байта), а не 4
                 if (o + 2 <= b.size) incline = s16(b, o) / 10.0
                 o += 2 
             }
-            if (flags and (1 shl 4) != 0) {
-                // [ФИКС 14] Elevation Gain - sint16 (2 байта)
-                o += 2 
-            }
+            if (flags and (1 shl 4) != 0) o += 2 
             if (flags and (1 shl 5) != 0) o += 1
             if (flags and (1 shl 6) != 0) o += 1
             if (flags and (1 shl 7) != 0) {
