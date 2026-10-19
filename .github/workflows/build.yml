@@ -27,12 +27,23 @@ jobs:
         with:
           gradle-version: '8.6'
 
-      - name: Decode Debug Keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+      - name: Verify keystore
         run: |
-          mkdir -p ~/.android
-          echo "$KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
+          KS=app/keystore/treadmill.keystore
+          if [ ! -f "$KS" ]; then
+            echo "::error::Keystore file $KS not found!"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$KS")
+          if [ "$SIZE" -lt 1000 ]; then
+            echo "::error::Keystore looks corrupt (size=$SIZE bytes)"
+            exit 1
+          fi
+          keytool -list -keystore "$KS" -storepass treadmill123 -alias treadmill \
+            || { echo "::error::Keystore cannot be read"; exit 1; }
+          echo "Keystore fingerprint (must be constant):"
+          keytool -list -v -keystore "$KS" -storepass treadmill123 -alias treadmill \
+            | grep -E "SHA1:|SHA256:"
 
       - name: Inject version code
         run: |
@@ -42,6 +53,13 @@ jobs:
 
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --no-configuration-cache
+
+      - name: Verify APK signature
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "$APK" \
+            | grep -E "Signer #1 certificate (SHA-1|SHA-256) digest"
 
       - name: Read version from build.gradle.kts
         id: version
@@ -70,7 +88,7 @@ jobs:
           name: "Treadmill Control ${{ steps.version.outputs.name }} (build ${{ steps.version.outputs.code }})"
           body: |
             Автосборка из коммита ${{ github.sha }}.
-            Скачайте `.apk` ниже и откройте на телефоне — Android предложит обновить.
+            Скачайте `.apk` ниже и откройте на телефоне.
           files: artifacts/TreadmillControl-${{ steps.version.outputs.name }}.apk
           draft: false
           prerelease: false
