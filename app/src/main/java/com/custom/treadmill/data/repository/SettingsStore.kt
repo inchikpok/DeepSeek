@@ -20,12 +20,12 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val keepScreenOn: Boolean = true,
     
+    // Профиль спортсмена
     val weightKg: Double = 75.0,
+    val age: Int = 30,
+    val isMale: Boolean = true,
+    val restingHr: Int = 60,
 
-    val minSpeedKmh: Double = 1.0,
-    val maxSpeedKmh: Double = 20.0,
-    val maxInclinePercent: Double = 15.0,
-    
     // Пульс
     val hrEnabled: Boolean = false,
     val hrMode: HrMode = HrMode.TARGET,
@@ -37,8 +37,8 @@ data class AppSettings(
     val intervalSec: Int = 30,
     val stepKmh: Double = 0.5,
     
-    // [НОВОЕ] Максимальный пульс для расчета цветных зон на графике
-    val maxHr: Int = 190,
+    val autoMaxHr: Boolean = true, // Авто-расчет максимального пульса
+    val maxHr: Int = 190,          // Ручной максимум (если авто выключено)
 
     val speedStepKmh: Double = 0.5,
     val sendStartCommand: Boolean = true
