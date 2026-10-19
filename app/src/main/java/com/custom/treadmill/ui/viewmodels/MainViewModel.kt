@@ -40,7 +40,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var protocol: ITreadmillProtocol? = null
     private val hrService = HeartRateService()
 
-    // [ФИКС 2] Храним джобы для отмены
     private var treadmillStateJob: Job? = null
     private var treadmillNotifyJob: Job? = null
     private var treadmillLogJob: Job? = null
@@ -104,6 +103,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val uiCalories: StateFlow<Int> = _uiCalories.asStateFlow()
 
     private var metricsJob: Job? = null
+    private var totalCaloriesDouble = 0.0 // [ФИКС] Аккумулятор для точного расчета
 
     private val workoutManager = WorkoutManager()
     val workoutState = workoutManager.state
@@ -117,7 +117,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun isTreadmillReady(): Boolean = _treadmillState.value == BleConnectionState.READY
 
-    // [ФИКС 21] Метод для вывода сообщений из UI
     fun showMessage(msg: String) {
         _statusMessage.value = msg
     }
@@ -155,7 +154,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        // [ФИКС 3] Восстанавливаем автопульс при запуске приложения
         if (settingsStore.settings.value.hrEnabled) {
             startHrAutoLoop()
         }
@@ -169,12 +167,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             while (isActive) {
                 delay(1000L)
                 if (!isTreadmillReady()) continue
-                val speed = _treadmillData.value.speedKmh
-                if (speed < 0.3) continue
+                
+                val d = _treadmillData.value
+                if (d.speedKmh < 0.3) continue
 
+                val weight = settingsStore.settings.value.weightKg
+                // Упрощенная формула MET (Metabolic Equivalent of Task)
+                val met = if (d.speedKmh < 6.0) {
+                    1.0 + (d.speedKmh * 0.5) + (d.inclinePercent * 0.1)
+                } else {
+                    1.0 + (d.speedKmh * 0.9) + (d.inclinePercent * 0.15)
+                }
+                val kcalPerMin = (met * 3.5 * weight) / 200.0
+                
                 _uiElapsedSec.value += 1
-                _uiDistanceKm.value += speed / 3600.0
-                _uiCalories.value = (_uiDistanceKm.value * 60).toInt()
+                _uiDistanceKm.value += d.speedKmh / 3600.0
+                totalCaloriesDouble += kcalPerMin / 60.0
+                _uiCalories.value = totalCaloriesDouble.toInt()
             }
         }
     }
@@ -183,6 +192,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _uiElapsedSec.value = 0
         _uiDistanceKm.value = 0.0
         _uiCalories.value = 0
+        totalCaloriesDouble = 0.0
     }
 
     fun resetHrHistory() { _hrHistory.value = emptyList() }
@@ -205,13 +215,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _treadmillState.value = state
                 if (state == BleConnectionState.READY) onTreadmillReady(conn)
                 
-                // [ФИКС 10] Если связь потерялась, ставим тренировку на паузу
                 if (state == BleConnectionState.DISCONNECTED && treadmillConn == conn) {
                     _statusMessage.value = "Дорожка отключена"
                     if (workoutManager.state.value.running && !workoutManager.state.value.paused) {
                         workoutManager.pause()
                     }
-                    // [ФИКС 11] Не выключаем галочку hrEnabled в настройках! Просто стопаем цикл.
                     stopHrAutoLoop()
                 }
             }
@@ -253,7 +261,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _targetSpeed.value = _treadmillData.value.speedKmh
             _targetIncline.value = _treadmillData.value.inclinePercent
 
-            // [ФИКС 3] Если был включен автопульс — возобновляем цикл
             if (settingsStore.settings.value.hrEnabled) {
                 startHrAutoLoop()
             }
@@ -264,14 +271,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settingsCollectorJob?.cancel()
         settingsCollectorJob = null
         
-        // [ФИКС 2, 10] Отменяем старые джобы
         treadmillStateJob?.cancel()
         treadmillNotifyJob?.cancel()
         treadmillLogJob?.cancel()
         
         val conn = treadmillConn
         treadmillConn = null
-        
         conn?.disconnect()
         protocol = null
         
@@ -383,7 +388,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
 
-                // [ФИКС 6] Не строгое неравенство, чтобы восстанавливать 1.0 км/ч
                 if (resumeSpeed >= 1.0) {
                     protocol?.setSpeed(resumeSpeed)
                 } else {
@@ -427,8 +431,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _isPaused.value = false
         speedBeforePause = 0.0
         viewModelScope.launch { protocol?.stop() }
-        
-        // [ФИКС 4] Сохраняем ручную тренировку в журнал
         saveWorkoutLog()
     }
 
