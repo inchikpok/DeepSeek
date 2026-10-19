@@ -182,6 +182,8 @@ UNixFit-990x (модуль FitShow FS-E629DD) через Bluetooth Low Energy (F
 - **C4** (пауза в программе).
 - **Работа в фоне:** При сворачивании экрана связь не рвется, метрики идут, уведомление висит.
 - **Автопереподключение:** Логи показывают, что при обрыве сервис начинает цикл реконнекта.
+- - **Подпись APK:** keystore в репо, отпечаток SHA-256 стабилен между билдами.
+- **Обновление поверх:** новый APK ставится без удаления старого, данные сохраняются.
 
 ---
 
@@ -199,7 +201,7 @@ UNixFit-990x (модуль FitShow FS-E629DD) через Bluetooth Low Energy (F
 ## Backlog
 
 - [x] Автопереподключение BLE (сделано, работает в `TreadmillSession`).
-- [ ] **Починить CI (Keystore) — КРИТИЧНО.**
+- [x] **Починить CI (Keystore) — сделано 2026-10-19.** Keystore в репо + явный signingConfig + Verify keystore в CI.
 - [ ] TTS голосовые подсказки.
 - [ ] Плавающая emergency stop.
 - [ ] Экспорт в TCX / FIT.
@@ -208,6 +210,13 @@ UNixFit-990x (модуль FitShow FS-E629DD) через Bluetooth Low Energy (F
 ---
 
 ## Changelog
+
+### 2026-10-19 (v2.0+ · CI fix)
+- **CI / Подпись**: Починен конфликт пакетов при обновлении APK. Причина — неявное использование `~/.android/debug.keystore` и ненадёжное декодирование секрета в `build.yml`.
+- **Keystore**: постоянный файл `app/keystore/treadmill.keystore` закоммичен в репо; явный `signingConfigs.create("stable")` в `app/build.gradle.kts` для debug и release.
+- **CI проверки**: шаг `Verify keystore` (жёсткий — падает при отсутствии/повреждении ключа) и шаг `Show APK signature` (информационный, `continue-on-error`).
+- **`build.yml`**: удалён шаг `Decode Debug Keystore` и зависимость от `secrets.DEBUG_KEYSTORE_BASE64`. `gradle assembleDebug` теперь подписывает APK одним и тем же сертификатом на каждом прогоне.
+- **`.gitignore`**: добавлен (в репо ранее отсутствовал).
 
 ### 2026-10-19 (v2.0+)
 - **Архитектура**: Внедрен `TreadmillSession` (вместо монолитного VM) и `TreadmillService` (Foreground Service). Работа в фоне стабилизирована.
