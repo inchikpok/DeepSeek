@@ -15,14 +15,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Точка графика пульса: время (мс) + значение уд/мин. */
 data class HrPoint(val timestamp: Long, val bpm: Int)
 
-/**
- * Простой график пульса в реальном времени.
- * По X — последние 30 минут; по Y — динамический диапазон.
- * Целевой пульс рисуется синей горизонтальной линией.
- */
 @Composable
 fun HeartRateChart(
     points: List<HrPoint>,
@@ -31,11 +25,7 @@ fun HeartRateChart(
 ) {
     if (points.isEmpty()) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text(
-                "Ожидание данных пульса…",
-                color = Color.Gray,
-                fontSize = 13.sp
-            )
+            Text("Ожидание данных пульса…", color = Color.Gray, fontSize = 13.sp)
         }
         return
     }
@@ -49,12 +39,19 @@ fun HeartRateChart(
     val refMin = if (target > 0) minOf(minBpmRaw, target) else minBpmRaw
     val refMax = if (target > 0) maxOf(maxBpmRaw, target) else maxBpmRaw
 
-    val yMin = (refMin - 10).coerceAtLeast(40)
-    val yMax = (refMax + 10).coerceAtMost(220)
-    val yRange = (yMax - yMin).coerceAtLeast(30)
+    // [ФИКС 16] Корректируем Y-ось, чтобы она вмещала минимум 30 единиц
+    var yMin = (refMin - 10).coerceAtLeast(40)
+    var yMax = (refMax + 10).coerceAtMost(220)
+    val actualRange = yMax - yMin
+    if (actualRange < 30) {
+        val padding = (30 - actualRange) / 2
+        yMin = (yMin - padding).coerceAtLeast(0)
+        yMax = (yMax + padding).coerceAtMost(220)
+    }
+    val yRange = (yMax - yMin).coerceAtLeast(1)
 
-    val lineColor = Color(0xFFC62828)   // красный — пульс
-    val targetColor = Color(0xFF1976D2) // синий — цель
+    val lineColor = Color(0xFFC62828)
+    val targetColor = Color(0xFF1976D2)
     val gridColor = Color(0xFFE0E0E0)
 
     Box(modifier) {
@@ -69,30 +66,17 @@ fun HeartRateChart(
             val innerH = h - padT - padB
             if (innerW <= 0f || innerH <= 0f) return@Canvas
 
-            // Горизонтальная сетка
             val steps = 4
             for (i in 0..steps) {
                 val y = padT + innerH * i / steps.toFloat()
-                drawLine(
-                    color = gridColor,
-                    start = Offset(padL, y),
-                    end = Offset(w - padR, y),
-                    strokeWidth = 1f
-                )
+                drawLine(color = gridColor, start = Offset(padL, y), end = Offset(w - padR, y), strokeWidth = 1f)
             }
 
-            // Целевая линия
             if (target in yMin..yMax) {
                 val ty = padT + innerH * (1f - (target - yMin).toFloat() / yRange)
-                drawLine(
-                    color = targetColor,
-                    start = Offset(padL, ty),
-                    end = Offset(w - padR, ty),
-                    strokeWidth = 2f
-                )
+                drawLine(color = targetColor, start = Offset(padL, ty), end = Offset(w - padR, ty), strokeWidth = 2f)
             }
 
-            // Линия пульса
             val tRange = (maxT - minT).coerceAtLeast(1000L)
             val path = Path()
             points.forEachIndexed { i, p ->
@@ -103,22 +87,7 @@ fun HeartRateChart(
             drawPath(path, lineColor, style = Stroke(width = 3f))
         }
 
-        // Метки по Y — обычными Text поверх Canvas
-        Text(
-            "$yMax",
-            fontSize = 11.sp,
-            color = Color(0xFF757575),
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 2.dp, top = 2.dp)
-        )
-        Text(
-            "$yMin",
-            fontSize = 11.sp,
-            color = Color(0xFF757575),
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 2.dp, bottom = 2.dp)
-        )
+        Text("$yMax", fontSize = 11.sp, color = Color(0xFF757575), modifier = Modifier.align(Alignment.TopStart).padding(start = 2.dp, top = 2.dp))
+        Text("$yMin", fontSize = 11.sp, color = Color(0xFF757575), modifier = Modifier.align(Alignment.BottomStart).padding(start = 2.dp, bottom = 2.dp))
     }
 }
