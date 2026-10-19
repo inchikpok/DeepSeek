@@ -53,7 +53,6 @@ class BleConnection(
     private val _characteristics = MutableStateFlow<List<GattCharInfo>>(emptyList())
     val characteristics: StateFlow<List<GattCharInfo>> = _characteristics.asStateFlow()
 
-    /** Ожидающие чтения: uuid → отложенный результат. */
     private val pendingReads = ConcurrentHashMap<UUID, CompletableDeferred<ByteArray?>>()
 
     private fun log(msg: String) {
@@ -72,6 +71,15 @@ class BleConnection(
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     _state.value = BleConnectionState.DISCONNECTED
+                    // [ФИКС 12] Закрываем GATT при неожиданном разрыве, чтобы не утекал
+                    try {
+                        g.close()
+                    } catch (_: Exception) {}
+                    if (gatt == g) {
+                        gatt = null
+                    }
+                    pendingReads.values.forEach { it.complete(null) }
+                    pendingReads.clear()
                 }
             }
         }
@@ -94,42 +102,25 @@ class BleConnection(
             _state.value = BleConnectionState.READY
         }
 
-        // ---- Чтение характеристики (API 33+) ----
-        override fun onCharacteristicRead(
-            g: BluetoothGatt,
-            c: BluetoothGattCharacteristic,
-            value: ByteArray,
-            status: Int
-        ) {
+        override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
             val result = if (status == BluetoothGatt.GATT_SUCCESS) value else null
             log("read ${c.uuid} status=$status value=${value.toHex()}")
             pendingReads.remove(c.uuid)?.complete(result)
         }
 
-        // ---- Чтение характеристики (API < 33) ----
         @Deprecated("Deprecated in Java")
         @Suppress("DEPRECATION")
-        override fun onCharacteristicRead(
-            g: BluetoothGatt,
-            c: BluetoothGattCharacteristic,
-            status: Int
-        ) {
+        override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
             val result = if (status == BluetoothGatt.GATT_SUCCESS) c.value else null
             log("read ${c.uuid} status=$status value=${result?.toHex()}")
             pendingReads.remove(c.uuid)?.complete(result)
         }
 
-        // ---- Уведомления (API 33+) ----
-        override fun onCharacteristicChanged(
-            g: BluetoothGatt,
-            c: BluetoothGattCharacteristic,
-            value: ByteArray
-        ) {
+        override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {
             log("<- ${c.uuid} ${value.toHex()}")
             _notifications.tryEmit(BleNotification(c.uuid, value))
         }
 
-        // ---- Уведомления (API < 33) ----
         @Deprecated("Deprecated in Java")
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) {
@@ -138,11 +129,7 @@ class BleConnection(
             _notifications.tryEmit(BleNotification(c.uuid, v))
         }
 
-        override fun onCharacteristicWrite(
-            g: BluetoothGatt,
-            c: BluetoothGattCharacteristic,
-            status: Int
-        ) {
+        override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
             log("write ${c.uuid} status=$status")
         }
 
@@ -175,8 +162,7 @@ class BleConnection(
         try {
             gatt?.disconnect()
             gatt?.close()
-        } catch (_: Exception) {
-        }
+        } catch (_: Exception) {}
         gatt = null
         pendingReads.values.forEach { it.complete(null) }
         pendingReads.clear()
@@ -193,10 +179,7 @@ class BleConnection(
         return null
     }
 
-    fun findCharacteristic(
-        serviceUuid: UUID,
-        requiredPropertyMask: Int
-    ): BluetoothGattCharacteristic? {
+    fun findCharacteristic(serviceUuid: UUID, requiredPropertyMask: Int): BluetoothGattCharacteristic? {
         val g = gatt ?: return null
         val s = g.getService(serviceUuid) ?: return null
         return s.characteristics.firstOrNull { (it.properties and requiredPropertyMask) != 0 }
@@ -232,10 +215,6 @@ class BleConnection(
         }
     }
 
-    /**
-     * Чтение значения характеристики (подвешивает на 2 сек).
-     * Возвращает null при ошибке или таймауте.
-     */
     suspend fun read(uuid: UUID): ByteArray? {
         val g = gatt ?: return null
         val c = findCharacteristic(uuid) ?: run {
@@ -272,17 +251,11 @@ class BleConnection(
         log("-> ${c.uuid} ${data.toHex()}")
         return try {
             if (Build.VERSION.SDK_INT >= 33) {
-                val wt = if (withResponse)
-                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                else
-                    BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                val wt = if (withResponse) BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                 g.writeCharacteristic(c, data, wt) == 0
             } else {
                 @Suppress("DEPRECATION")
-                c.writeType = if (withResponse)
-                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                else
-                    BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                c.writeType = if (withResponse) BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                 @Suppress("DEPRECATION")
                 c.value = data
                 @Suppress("DEPRECATION")
