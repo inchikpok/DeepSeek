@@ -8,15 +8,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-enum class ProtocolType { FTMS, FITSHOW }
 enum class HrMode { TARGET, ZONE }
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 @Serializable
 data class AppSettings(
-    val protocol: ProtocolType = ProtocolType.FTMS,
-    val manualWriteUuid: String = "",
-    val manualNotifyUuid: String = "",
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val keepScreenOn: Boolean = true,
     
@@ -26,7 +22,7 @@ data class AppSettings(
     val isMale: Boolean = true,
     val restingHr: Int = 60,
 
-    // Скорость и наклон (ВОЗВРАЩЕНО)
+    // Скорость и наклон
     val minSpeedKmh: Double = 1.0,
     val maxSpeedKmh: Double = 20.0,
     val maxInclinePercent: Double = 15.0,
@@ -43,8 +39,8 @@ data class AppSettings(
     val intervalSec: Int = 30,
     val stepKmh: Double = 0.5,
     
-    val autoMaxHr: Boolean = true, // Авто-расчет максимального пульса
-    val maxHr: Int = 190,          // Ручной максимум (если авто выключено)
+    val autoMaxHr: Boolean = true,
+    val maxHr: Int = 190,
 
     val sendStartCommand: Boolean = true
 )
