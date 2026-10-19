@@ -20,12 +20,13 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val keepScreenOn: Boolean = true,
     
-    // [ФИКС] Добавлен вес для расчета калорий
     val weightKg: Double = 75.0,
 
     val minSpeedKmh: Double = 1.0,
     val maxSpeedKmh: Double = 20.0,
     val maxInclinePercent: Double = 15.0,
+    
+    // Пульс
     val hrEnabled: Boolean = false,
     val hrMode: HrMode = HrMode.TARGET,
     val targetHr: Int = 130,
@@ -35,6 +36,10 @@ data class AppSettings(
     val thresholdLow: Int = 5,
     val intervalSec: Int = 30,
     val stepKmh: Double = 0.5,
+    
+    // [НОВОЕ] Максимальный пульс для расчета цветных зон на графике
+    val maxHr: Int = 190,
+
     val speedStepKmh: Double = 0.5,
     val sendStartCommand: Boolean = true
 )
