@@ -2,13 +2,11 @@ package com.custom.treadmill
 
 import android.app.Application
 import com.custom.treadmill.ble.BleManager
+import com.custom.treadmill.ble.TreadmillSession
 import com.custom.treadmill.data.database.AppDatabase
 import com.custom.treadmill.data.repository.ProgramRepository
 import com.custom.treadmill.data.repository.SettingsStore
 
-/**
- * Класс приложения. Ручной DI.
- */
 class TreadmillApp : Application() {
 
     lateinit var bleManager: BleManager
@@ -19,6 +17,8 @@ class TreadmillApp : Application() {
         private set
     lateinit var settingsStore: SettingsStore
         private set
+    lateinit var session: TreadmillSession
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -27,6 +27,7 @@ class TreadmillApp : Application() {
         database = AppDatabase.get(this)
         programRepository = ProgramRepository(database.programDao(), database.workoutLogDao())
         settingsStore = SettingsStore(this)
+        session = TreadmillSession(this)
     }
 
     companion object {
