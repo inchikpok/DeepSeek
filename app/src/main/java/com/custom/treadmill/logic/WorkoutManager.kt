@@ -98,18 +98,12 @@ class WorkoutManager {
         if (nextIndex >= program.segments.size) {
             job?.cancel()
             job = null
-            _state.value = s.copy(
-                running = false,
-                paused = false,
-                finished = true
-            )
+            _state.value = s.copy(running = false, paused = false, finished = true)
             scopeRef?.launch { onFinishRef?.invoke() }
             return
         }
 
-        val remainingInCurrent = (s.segmentDurationSec - s.segmentElapsedSec).coerceAtLeast(0)
-        val newTotal = s.totalElapsedSec + remainingInCurrent
-
+        // [ФИКС 1] Не накручиваем непробежанное время.
         val next = program.segments[nextIndex]
 
         job?.cancel()
@@ -120,7 +114,7 @@ class WorkoutManager {
             currentSegmentName = next.name.ifBlank { "Сегмент ${nextIndex + 1}" },
             segmentDurationSec = next.durationSec,
             segmentElapsedSec = 0,
-            totalElapsedSec = newTotal
+            totalElapsedSec = s.totalElapsedSec
         )
 
         launchLoop()
@@ -147,9 +141,7 @@ class WorkoutManager {
         job = scope.launch {
             val segments = program.segments
 
-            if (_state.value.segmentElapsedSec > 0 &&
-                _state.value.currentSegmentIndex < segments.size
-            ) {
+            if (_state.value.segmentElapsedSec > 0 && _state.value.currentSegmentIndex < segments.size) {
                 val seg = segments[_state.value.currentSegmentIndex]
                 onSetSpeed(seg.speedKmh)
                 onSetIncline(seg.inclinePercent)
@@ -177,37 +169,24 @@ class WorkoutManager {
                     delay(1000L)
                     s++
                     totalElapsed++
-                    _state.value = _state.value.copy(
-                        segmentElapsedSec = s,
-                        totalElapsedSec = totalElapsed
-                    )
+                    _state.value = _state.value.copy(segmentElapsedSec = s, totalElapsedSec = totalElapsed)
                 }
 
                 if (s >= seg.durationSec) {
                     index++
                     if (index < segments.size) {
-                        _state.value = _state.value.copy(
-                            currentSegmentIndex = index,
-                            segmentElapsedSec = 0
-                        )
+                        _state.value = _state.value.copy(currentSegmentIndex = index, segmentElapsedSec = 0)
                     }
                 }
             }
 
             if (isActive) {
-                _state.value = _state.value.copy(
-                    running = false,
-                    paused = false,
-                    finished = true
-                )
-                // Останавливаем belt после окончания программы.
-                // Иначе он продолжит идти с последней скоростью.
+                _state.value = _state.value.copy(running = false, paused = false, finished = true)
                 onFinish()
             }
         }
     }
 
     private suspend fun noopDouble(@Suppress("UNUSED_PARAMETER") value: Double) {
-        // no-op
     }
 }
