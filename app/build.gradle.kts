@@ -18,13 +18,26 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        create("stable") {
+            storeFile = file("keystore/treadmill.keystore")
+            storePassword = "treadmill123"
+            keyAlias = "treadmill"
+            keyPassword = "treadmill123"
+        }
+    }
+
     buildTypes {
         debug {
-            // Суффикс убран, приложение будет com.custom.treadmill
+            signingConfig = signingConfigs.getByName("stable")
         }
         release {
             isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("stable")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
