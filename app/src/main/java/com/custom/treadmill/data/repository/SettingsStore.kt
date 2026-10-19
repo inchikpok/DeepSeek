@@ -40,9 +40,7 @@ data class AppSettings(
     val stepKmh: Double = 0.5,
     
     val autoMaxHr: Boolean = true,
-    val maxHr: Int = 190,
-
-    val sendStartCommand: Boolean = true
+    val maxHr: Int = 190
 )
 
 class SettingsStore(context: Context) {
