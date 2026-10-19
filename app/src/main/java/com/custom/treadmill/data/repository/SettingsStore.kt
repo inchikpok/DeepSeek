@@ -26,6 +26,12 @@ data class AppSettings(
     val isMale: Boolean = true,
     val restingHr: Int = 60,
 
+    // Скорость и наклон (ВОЗВРАЩЕНО)
+    val minSpeedKmh: Double = 1.0,
+    val maxSpeedKmh: Double = 20.0,
+    val maxInclinePercent: Double = 15.0,
+    val speedStepKmh: Double = 0.5,
+
     // Пульс
     val hrEnabled: Boolean = false,
     val hrMode: HrMode = HrMode.TARGET,
@@ -40,7 +46,6 @@ data class AppSettings(
     val autoMaxHr: Boolean = true, // Авто-расчет максимального пульса
     val maxHr: Int = 190,          // Ручной максимум (если авто выключено)
 
-    val speedStepKmh: Double = 0.5,
     val sendStartCommand: Boolean = true
 )
 
