@@ -13,22 +13,15 @@ android {
         applicationId = "com.custom.treadmill"
         minSdk = 21
         targetSdk = 34
-
-        // ⚠️ ВАЖНО: увеличивайте эту цифру перед каждой новой сборкой,
-        // которую хотите установить ПОВЕРХ старой версии.
         versionCode = 10
         versionName = "2.0"
-
         vectorDrawables { useSupportLibrary = true }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -69,4 +62,7 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+    
+    // Для тестов
+    testImplementation("junit:junit:4.13.2")
 }
