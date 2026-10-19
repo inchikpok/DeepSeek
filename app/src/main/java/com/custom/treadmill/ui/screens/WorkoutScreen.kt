@@ -47,7 +47,7 @@ fun WorkoutScreen(
     val treadmillReady = treadmillState == BleConnectionState.READY
     val speedStep = settings.speedStepKmh
 
-    // [ФИКС 13] Состояние для диалога выхода
+    // Состояние для диалога выхода
     var showExitConfirm by remember { mutableStateOf(false) }
 
     val view = LocalView.current
@@ -68,7 +68,7 @@ fun WorkoutScreen(
 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(
-                    onClick = { showExitConfirm = true }, // [ФИКС 13] Вызываем диалог
+                    onClick = { showExitConfirm = true },
                     contentPadding = PaddingValues(4.dp)
                 ) { Text("← Назад") }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -135,7 +135,12 @@ fun WorkoutScreen(
                         }
                     }
                     Spacer(Modifier.height(4.dp))
-                    HeartRateChart(points = hrHistory, targetHr = targetHr, modifier = Modifier.fillMaxWidth().weight(1f))
+                    HeartRateChart(
+                        points = hrHistory, 
+                        targetHr = targetHr, 
+                        maxHr = settings.maxHr, // <--- Передаем максимальный пульс
+                        modifier = Modifier.fillMaxWidth().weight(1f)
+                    )
                 }
             }
 
@@ -168,7 +173,6 @@ fun WorkoutScreen(
         }
     }
 
-    // [ФИКС 13] Диалог подтверждения выхода
     if (showExitConfirm) {
         AlertDialog(
             onDismissRequest = { showExitConfirm = false },
