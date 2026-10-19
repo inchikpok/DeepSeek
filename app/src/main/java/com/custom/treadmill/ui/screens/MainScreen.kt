@@ -6,9 +6,7 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
@@ -90,13 +88,12 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
         Column(Modifier.fillMaxSize()) {
 
             // ==========================================================
-            //  Прокручиваемая верхняя часть
+            //  Верхняя часть (теперь без прокрутки)
             // ==========================================================
             Column(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 10.dp)
             ) {
                 Spacer(Modifier.height(6.dp))
@@ -148,7 +145,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         label = "Скорость",
                         value = "%.1f".format(targetSpeed),
                         unit = "км/ч",
-                        enabled = treadmillReady, // <--- Блокируем кнопки, если нет связи
+                        enabled = treadmillReady,
                         onMinus = { vm.setSpeed(targetSpeed - speedStep) },
                         onPlus = { vm.setSpeed(targetSpeed + speedStep) },
                         modifier = Modifier.weight(1f)
@@ -157,7 +154,7 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                         label = "Наклон",
                         value = "${targetIncline.roundToInt()}",
                         unit = "%",
-                        enabled = treadmillReady, // <--- Блокируем кнопки, если нет связи
+                        enabled = treadmillReady,
                         onMinus = { vm.setIncline(max(0.0, targetIncline.roundToInt() - 1.0)) },
                         onPlus = { vm.setIncline(targetIncline.roundToInt() + 1.0) },
                         onReset = { vm.setIncline(0.0) },
@@ -227,7 +224,8 @@ fun MainScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
                     }
                 }
 
-                Spacer(Modifier.height(88.dp))
+                // Убрали Spacer(Modifier.height(88.dp)), чтобы не растягивать экран
+                Spacer(Modifier.height(8.dp)) 
             }
 
             // ==========================================================
@@ -437,7 +435,7 @@ private fun ControlTile(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilledTonalButton(
                     onClick = onMinus,
-                    enabled = enabled, // <--- Блокировка
+                    enabled = enabled,
                     modifier = Modifier.weight(1f).height(34.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) {
@@ -445,7 +443,7 @@ private fun ControlTile(
                 }
                 FilledTonalButton(
                     onClick = onPlus,
-                    enabled = enabled, // <--- Блокировка
+                    enabled = enabled,
                     modifier = Modifier.weight(1f).height(34.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) {
@@ -455,7 +453,7 @@ private fun ControlTile(
             if (onReset != null) {
                 TextButton(
                     onClick = onReset,
-                    enabled = enabled, // <--- Блокировка
+                    enabled = enabled,
                     modifier = Modifier.height(18.dp),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                 ) { Text("Сбросить", fontSize = 10.sp) }
