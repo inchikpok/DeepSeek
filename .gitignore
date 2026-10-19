@@ -1,0 +1,18 @@
+# Android / Gradle build artifacts
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Build outputs
+app/build/
+build/
+
+# Но keystore НЕ игнорируем — он должен быть в репо
+!app/keystore/treadmill.keystore
