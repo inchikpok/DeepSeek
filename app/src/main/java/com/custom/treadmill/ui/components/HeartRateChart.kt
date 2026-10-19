@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -21,6 +22,7 @@ data class HrPoint(val timestamp: Long, val bpm: Int)
 fun HeartRateChart(
     points: List<HrPoint>,
     targetHr: Int = 0,
+    maxHr: Int = 190, // [НОВОЕ] Для расчета зон
     modifier: Modifier = Modifier
 ) {
     if (points.isEmpty()) {
@@ -39,7 +41,7 @@ fun HeartRateChart(
     val refMin = if (target > 0) minOf(minBpmRaw, target) else minBpmRaw
     val refMax = if (target > 0) maxOf(maxBpmRaw, target) else maxBpmRaw
 
-    // [ФИКС 16] Корректируем Y-ось, чтобы она вмещала минимум 30 единиц
+    // Корректируем Y-ось, чтобы она вмещала минимум 30 единиц
     var yMin = (refMin - 10).coerceAtLeast(40)
     var yMax = (refMax + 10).coerceAtMost(220)
     val actualRange = yMax - yMin
@@ -54,6 +56,13 @@ fun HeartRateChart(
     val targetColor = Color(0xFF1976D2)
     val gridColor = Color(0xFFE0E0E0)
 
+    // Цвета зон (полупрозрачные)
+    val zone1 = Color(0xFF64B5F6).copy(alpha = 0.15f) // Синий (50-60%)
+    val zone2 = Color(0xFF81C784).copy(alpha = 0.15f) // Зеленый (60-70%)
+    val zone3 = Color(0xFFFFD54F).copy(alpha = 0.15f) // Желтый (70-80%)
+    val zone4 = Color(0xFFFFB74D).copy(alpha = 0.15f) // Оранжевый (80-90%)
+    val zone5 = Color(0xFFE57373).copy(alpha = 0.15f) // Красный (90-100%)
+
     Box(modifier) {
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
@@ -66,17 +75,45 @@ fun HeartRateChart(
             val innerH = h - padT - padB
             if (innerW <= 0f || innerH <= 0f) return@Canvas
 
+            // [НОВОЕ] Отрисовка цветных зон
+            fun drawZone(startPercent: Float, endPercent: Float, color: Color) {
+                val startVal = (maxHr * startPercent).coerceIn(yMin.toFloat(), yMax.toFloat())
+                val endVal = (maxHr * endPercent).coerceIn(yMin.toFloat(), yMax.toFloat())
+                
+                if (startVal >= endVal) return
+
+                val topY = padT + innerH * (1f - (endVal - yMin) / yRange)
+                val bottomY = padT + innerH * (1f - (startVal - yMin) / yRange)
+                
+                drawRect(
+                    color = color,
+                    topLeft = Offset(padL, topY),
+                    size = Size(innerW, bottomY - topY)
+                )
+            }
+
+            drawZone(0.00f, 0.50f, Color.Transparent) // Ниже 50% - прозрачно
+            drawZone(0.50f, 0.60f, zone1)
+            drawZone(0.60f, 0.70f, zone2)
+            drawZone(0.70f, 0.80f, zone3)
+            drawZone(0.80f, 0.90f, zone4)
+            drawZone(0.90f, 1.00f, zone5)
+            drawZone(1.00f, 2.00f, zone5) // Выше максимума - тоже красный
+
+            // Сетка
             val steps = 4
             for (i in 0..steps) {
                 val y = padT + innerH * i / steps.toFloat()
                 drawLine(color = gridColor, start = Offset(padL, y), end = Offset(w - padR, y), strokeWidth = 1f)
             }
 
+            // Целевая линия
             if (target in yMin..yMax) {
                 val ty = padT + innerH * (1f - (target - yMin).toFloat() / yRange)
                 drawLine(color = targetColor, start = Offset(padL, ty), end = Offset(w - padR, ty), strokeWidth = 2f)
             }
 
+            // График пульса
             val tRange = (maxT - minT).coerceAtLeast(1000L)
             val path = Path()
             points.forEachIndexed { i, p ->
