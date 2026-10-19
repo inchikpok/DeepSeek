@@ -20,8 +20,7 @@ android {
 
     buildTypes {
         debug {
-            // [ФИКС] Устанавливается рядом со старой версией, не конфликтует
-            applicationIdSuffix = ".debug"
+            // Суффикс убран, приложение будет com.custom.treadmill
         }
         release {
             isMinifyEnabled = false
