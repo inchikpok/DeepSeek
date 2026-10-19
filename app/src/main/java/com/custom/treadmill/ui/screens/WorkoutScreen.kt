@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.data.repository.HrMode
+import com.custom.treadmill.logic.HeartRateZoneCalculator
 import com.custom.treadmill.ui.components.HeartRateChart
 import com.custom.treadmill.ui.components.RollingText
 import com.custom.treadmill.ui.viewmodels.MainViewModel
@@ -61,6 +62,10 @@ fun WorkoutScreen(
 
     val targetHr = if (settings.hrMode == HrMode.TARGET) settings.targetHr
                    else (settings.zoneMin + settings.zoneMax) / 2
+
+    // Рассчитываем актуальные зоны пульса
+    val maxHr = HeartRateZoneCalculator.getEffectiveMaxHr(settings)
+    val zoneBounds = HeartRateZoneCalculator.getZoneBounds(maxHr, settings.restingHr)
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
@@ -138,7 +143,7 @@ fun WorkoutScreen(
                     HeartRateChart(
                         points = hrHistory, 
                         targetHr = targetHr, 
-                        maxHr = settings.maxHr, // <--- Передаем максимальный пульс
+                        zoneBounds = zoneBounds, // <--- Передаем рассчитанные зоны
                         modifier = Modifier.fillMaxWidth().weight(1f)
                     )
                 }
