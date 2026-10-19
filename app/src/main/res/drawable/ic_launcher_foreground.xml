@@ -3,13 +3,52 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- Свечение дуги (толстая полупрозрачная линия) -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M18,72 h72 v6 h-72 z" />
+        android:strokeWidth="14"
+        android:strokeColor="#3300E5FF"
+        android:strokeLineCap="round"
+        android:pathData="M 24,72 A 34,34 0 1,1 84,72" />
+    
+    <!-- Сама дуга (скорость/дорожка) - яркий циан -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M20,60 l66,-20 l2,5 l-66,20 z" />
+        android:strokeWidth="5"
+        android:strokeColor="#00E5FF"
+        android:strokeLineCap="round"
+        android:pathData="M 24,72 A 34,34 0 1,1 84,72" />
+
+    <!-- Свечение кардиограммы -->
     <path
-        android:fillColor="#FFEB3B"
-        android:pathData="M44,34 A10,10 0 1,1 64,34 A10,10 0 1,1 44,34 Z" />
+        android:strokeWidth="12"
+        android:strokeColor="#33FF0055"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 30,54 L 44,54 L 50,36 L 58,72 L 64,54 L 78,54" />
+    
+    <!-- Кардиограмма (пульс) - яркий неоновый розовый -->
+    <path
+        android:strokeWidth="4"
+        android:strokeColor="#FF0055"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 30,54 L 44,54 L 50,36 L 58,72 L 64,54 L 78,54" />
+
+    <!-- Линии скорости (слева) -->
+    <path
+        android:strokeWidth="3"
+        android:strokeColor="#99FFFFFF"
+        android:strokeLineCap="round"
+        android:pathData="M 18,44 L 32,44" />
+    <path
+        android:strokeWidth="3"
+        android:strokeColor="#66FFFFFF"
+        android:strokeLineCap="round"
+        android:pathData="M 14,34 L 26,34" />
+    <path
+        android:strokeWidth="3"
+        android:strokeColor="#33FFFFFF"
+        android:strokeLineCap="round"
+        android:pathData="M 22,24 L 30,24" />
+        
 </vector>
