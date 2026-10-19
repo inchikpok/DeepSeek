@@ -27,14 +27,27 @@ jobs:
         with:
           gradle-version: '8.6'
 
-      # [ФИКС] Кэшируем ключ подписи, чтобы приложение могло обновляться поверх старого
-      - name: Cache Android Debug Keystore
-        uses: actions/cache@v4
+      # [ФИКС] Надежное сохранение файла ключа
+      - name: Restore Debug Keystore
+        uses: actions/cache/restore@v4
+        id: cache-keystore
         with:
-          path: ~/.android
-          key: android-debug-keystore-v1
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v2
 
-      # [ФИКС] Устанавливаем versionCode с запасом (10000 + номер сборки)
+      - name: Create Debug Keystore if not exists
+        if: steps.cache-keystore.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.android
+          keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Save Debug Keystore
+        if: steps.cache-keystore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v2
+
       - name: Inject version code
         run: |
           NEW_CODE=$((${{ github.run_number }} + 10000))
