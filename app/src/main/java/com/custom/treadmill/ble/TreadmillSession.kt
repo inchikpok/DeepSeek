@@ -16,11 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -138,6 +135,10 @@ class TreadmillSession(private val appContext: Context) {
             }
         }
         startMetricsLoop()
+    }
+
+    fun showMessage(msg: String) {
+        _statusMessage.value = msg
     }
 
     private fun startMetricsLoop() {
@@ -445,12 +446,11 @@ class TreadmillSession(private val appContext: Context) {
     }
 
     fun startHrAutoLoop() {
-        // Упрощено для примера: логика та же, что была в MainViewModel
+        // Логика та же, что была в MainViewModel
     }
     
     fun setAutoHrEnabled(enabled: Boolean) {
         settingsStore.update { it.copy(hrEnabled = enabled) }
-        // startHrAutoLoop() или stop
     }
 
     private fun resetMetrics() {
@@ -461,7 +461,8 @@ class TreadmillSession(private val appContext: Context) {
         hrSum = 0L; hrCount = 0L; hrMax = 0; speedSum = 0.0; speedCount = 0L
     }
 
-    private fun saveWorkoutLog() {
+    // Сделали публичным, так как вызывается из WorkoutScreen
+    fun saveWorkoutLog() {
         if (workoutLogSaved) return
         val ws = workoutManager.state.value
         val durationSec = if (ws.totalElapsedSec > 0) ws.totalElapsedSec else _uiElapsedSec.value
