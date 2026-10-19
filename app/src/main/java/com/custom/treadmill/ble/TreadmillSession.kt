@@ -7,6 +7,7 @@ import androidx.core.content.ContextCompat
 import com.custom.treadmill.TreadmillApp
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.database.WorkoutLogEntity
+import com.custom.treadmill.logic.TtsManager
 import com.custom.treadmill.logic.WorkoutManager
 import com.custom.treadmill.service.TreadmillService
 import com.custom.treadmill.ui.components.HrPoint
@@ -27,6 +28,9 @@ class TreadmillSession(private val appContext: Context) {
     private val ble = (appContext as TreadmillApp).bleManager
     private val settingsStore = (appContext as TreadmillApp).settingsStore
     private val repository = (appContext as TreadmillApp).programRepository
+    
+    // [НОВОЕ] Менеджер голоса
+    private val tts = TtsManager(appContext)
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -100,7 +104,7 @@ class TreadmillSession(private val appContext: Context) {
     private var lastConnectedMac: String? = null
     private var isAutoReconnecting = false
     private var isManualDisconnect = false
-    private var isConnecting = false // [ФИКС] Флаг, чтобы не срабатывало автопереподключение при первом коннекте
+    private var isConnecting = false
 
     private var hrSum = 0L; private var hrCount = 0L; private var hrMax = 0
     private var speedSum = 0.0; private var speedCount = 0L
@@ -109,6 +113,37 @@ class TreadmillSession(private val appContext: Context) {
     init {
         scope.launch { ble.scanLog.collect { addLog(it) } }
         
+        // [НОВОЕ] Слушаем изменения тренировки для озвучки
+        scope.launch {
+            var lastSegment = -1
+            workoutState.collect { ws ->
+                if (!settingsStore.settings.value.ttsEnabled) return@collect
+                if (ws.running && !ws.paused) {
+                    // Смена сегмента
+                    if (ws.currentSegmentIndex != lastSegment) {
+                        lastSegment = ws.currentSegmentIndex
+                        if (ws.currentSegmentIndex > 0) {
+                            tts.speak(ws.currentSegmentName.ifBlank { "Сегмент ${ws.currentSegmentIndex + 1}" })
+                        } else if (ws.totalElapsedSec == 0) {
+                            tts.speak("Старт")
+                        }
+                    }
+                    
+                    // За 10 секунд до конца
+                    val remain = ws.segmentDurationSec - ws.segmentElapsedSec
+                    if (remain == 10 && ws.totalElapsedSec > 0) {
+                        tts.speak("Десять секунд")
+                    }
+                }
+                
+                // Финиш
+                if (ws.finished && lastSegment != -1) {
+                    lastSegment = -1
+                    tts.speak("Тренировка завершена")
+                }
+            }
+        }
+
         scope.launch {
             _heartRate.collect { hr ->
                 if (hr > 0) {
@@ -172,7 +207,7 @@ class TreadmillSession(private val appContext: Context) {
     fun connectTreadmill(device: BluetoothDevice) {
         lastConnectedMac = device.address
         isManualDisconnect = false
-        isConnecting = true // [ФИКС] Ставим флаг
+        isConnecting = true
         disconnectTreadmillInternal()
         
         _treadmillName.value = try { device.name } catch (_: SecurityException) { null } ?: "Дорожка"
@@ -189,7 +224,7 @@ class TreadmillSession(private val appContext: Context) {
             conn.state.collect { state ->
                 _treadmillState.value = state
                 if (state == BleConnectionState.READY) {
-                    isConnecting = false // [ФИКС] Сбрасываем флаг, когда подключились
+                    isConnecting = false
                     onTreadmillReady(conn)
                 }
                 if (state == BleConnectionState.DISCONNECTED) {
@@ -203,18 +238,19 @@ class TreadmillSession(private val appContext: Context) {
         }
         treadmillNotifyJob = scope.launch { conn.notifications.collect { protocol?.onNotification(it) } }
         
-        ble.stopScan() // [ФИКС] Останавливаем сканирование при подключении
+        ble.stopScan()
         conn.connect(device)
     }
 
     private fun triggerAutoReconnect() {
-        if (isAutoReconnecting || isConnecting) return // [ФИКС] Проверяем флаг
+        if (isAutoReconnecting || isConnecting) return
         val mac = lastConnectedMac ?: return
         val adapter = ble.adapter ?: return
         
         isAutoReconnecting = true
         addLog("Связь потеряна. Запуск автопереподключения к $mac...")
         _statusMessage.value = "Связь потеряна. Переподключение..."
+        if (settingsStore.settings.value.ttsEnabled) tts.speak("Связь потеряна")
 
         scope.launch {
             for (i in 1..10) {
@@ -247,7 +283,6 @@ class TreadmillSession(private val appContext: Context) {
             if (_treadmillState.value != BleConnectionState.READY) {
                 addLog("Автопереподключение не удалось после 10 попыток.")
                 _statusMessage.value = "Не удалось переподключиться. Нажмите кнопку на дорожке."
-                stopService()
             } else {
                 addLog("Связь успешно восстановлена!")
                 _statusMessage.value = "Связь восстановлена!"
@@ -277,9 +312,7 @@ class TreadmillSession(private val appContext: Context) {
         lastConnectedMac = null
         isConnecting = false
         addLog("Ручное отключение дорожки")
-        
-        ble.stopScan() // [ФИКС] Останавливаем сканер
-        
+        ble.stopScan() 
         disconnectTreadmillInternal()
         stopService()
     }
@@ -333,7 +366,7 @@ class TreadmillSession(private val appContext: Context) {
                 _heartRate.value = hrService.heartRate.value
             }
         }
-        ble.stopScan() // [ФИКС]
+        ble.stopScan()
         conn.connect(device)
     }
 
@@ -396,6 +429,7 @@ class TreadmillSession(private val appContext: Context) {
                     if (resumeSpeed >= 1.0) protocol?.setSpeed(resumeSpeed)
                     val targetInclineLocal = _targetIncline.value
                     if (targetInclineLocal > 0.0) protocol?.setIncline(targetInclineLocal)
+                    if (settingsStore.settings.value.ttsEnabled) tts.speak("Старт")
                 } else {
                     _statusMessage.value = "Дорожка не отвечает. Нажмите кнопку."
                 }
@@ -482,6 +516,13 @@ class TreadmillSession(private val appContext: Context) {
         settingsStore.update { it.copy(hrEnabled = enabled) }
     }
 
+    // Вспомогательный метод для голосовых подсказок от автопульса
+    fun speakHrWarning(isHigh: Boolean) {
+        if (settingsStore.settings.value.ttsEnabled) {
+            if (isHigh) tts.speak("Пульс высокий") else tts.speak("Пульс низкий")
+        }
+    }
+
     private fun resetMetrics() {
         _uiElapsedSec.value = 0; _uiDistanceKm.value = 0.0; _uiCalories.value = 0; totalCaloriesDouble = 0.0
     }
@@ -530,4 +571,9 @@ class TreadmillSession(private val appContext: Context) {
     }
 
     fun clearLogs() { _logs.value = emptyList() }
+    
+    // Вызов при уничтожении приложения (не обязательно, так как Application живет долго)
+    fun onDestroy() {
+        tts.shutdown()
+    }
 }
