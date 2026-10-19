@@ -31,12 +31,16 @@ class TreadmillService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "ACTION_STOP") {
+            TreadmillApp.instance.session.stopTreadmill()
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val session = TreadmillApp.instance.session
         
-        // Запускаем сервис в foreground
         startForeground(notificationId, buildNotification())
 
-        // Слушаем изменения, чтобы обновлять уведомление
         serviceScope.launch {
             session.treadmillData.collectLatest { updateNotification() }
         }
@@ -49,7 +53,6 @@ class TreadmillService : Service() {
         serviceScope.launch {
             session.treadmillState.collectLatest { state ->
                 updateNotification()
-                // Если дорожка отключена и нет тренировки — закрываем сервис
                 if (state == BleConnectionState.DISCONNECTED && !session.workoutState.value.running) {
                     stopSelf()
                 }
@@ -79,8 +82,10 @@ class TreadmillService : Service() {
         val stopIntent = Intent(this, TreadmillService::class.java).apply {
             action = "ACTION_STOP"
         }
-        // В реальном приложении здесь нужен BroadcastReceiver для обработки кнопки стоп,
-        // но для простоты мы просто открываем приложение.
+        val stopPendingIntent = PendingIntent.getService(
+            this, 1, stopIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val mainIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this, 0, mainIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -92,6 +97,7 @@ class TreadmillService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
+            .addAction(0, "Стоп", stopPendingIntent) // Кнопка Стоп
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
