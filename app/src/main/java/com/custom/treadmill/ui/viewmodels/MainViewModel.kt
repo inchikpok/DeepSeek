@@ -11,7 +11,6 @@ import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.database.WorkoutLogEntity
 import com.custom.treadmill.data.repository.AppSettings
 import com.custom.treadmill.data.repository.HrMode
-import com.custom.treadmill.data.repository.ProtocolType
 import com.custom.treadmill.logic.HeartRateController
 import com.custom.treadmill.logic.WorkoutManager
 import com.custom.treadmill.ui.components.HrPoint
@@ -37,7 +36,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var treadmillConn: BleConnection? = null
     private var hrConn: BleConnection? = null
-    private var protocol: ITreadmillProtocol? = null
+    private var protocol: FTMSProtocol? = null
     private val hrService = HeartRateService()
 
     private var treadmillStateJob: Job? = null
@@ -103,7 +102,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val uiCalories: StateFlow<Int> = _uiCalories.asStateFlow()
 
     private var metricsJob: Job? = null
-    private var totalCaloriesDouble = 0.0 // [ФИКС] Аккумулятор для точного расчета
+    private var totalCaloriesDouble = 0.0
 
     private val workoutManager = WorkoutManager()
     val workoutState = workoutManager.state
@@ -172,7 +171,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (d.speedKmh < 0.3) continue
 
                 val weight = settingsStore.settings.value.weightKg
-                // Упрощенная формула MET (Metabolic Equivalent of Task)
                 val met = if (d.speedKmh < 6.0) {
                     1.0 + (d.speedKmh * 0.5) + (d.inclinePercent * 0.1)
                 } else {
@@ -232,15 +230,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun onTreadmillReady(conn: BleConnection) {
         viewModelScope.launch {
             val s = settingsStore.settings.value
-            val p: ITreadmillProtocol = when (s.protocol) {
-                ProtocolType.FTMS -> FTMSProtocol().apply {
-                    sendStartCommand = s.sendStartCommand
-                    onLog = { msg -> addLog(msg) }
-                }
-                ProtocolType.FITSHOW -> FitShowProprietaryProtocol(
-                    manualWriteUuid = s.manualWriteUuid.takeIf { it.isNotBlank() }?.toUuidSafe(),
-                    manualNotifyUuid = s.manualNotifyUuid.takeIf { it.isNotBlank() }?.toUuidSafe()
-                )
+            
+            // Всегда FTMS
+            val p = FTMSProtocol().apply {
+                sendStartCommand = s.sendStartCommand
+                onLog = { msg -> addLog(msg) }
             }
             protocol = p
             addLog("Протокол: ${p.protocolName}")
@@ -248,9 +242,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             settingsCollectorJob?.cancel()
             settingsCollectorJob = viewModelScope.launch {
                 settingsStore.settings.collect { newS ->
-                    (p as? FTMSProtocol)?.apply {
-                        sendStartCommand = newS.sendStartCommand
-                    }
+                    p.sendStartCommand = newS.sendStartCommand
                 }
             }
 
@@ -355,7 +347,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (_treadmillData.value.speedKmh >= minSpeedKmh) return true
             val now = System.currentTimeMillis()
             if (now - lastPingAt >= 4000L) {
-                (protocol as? FTMSProtocol)?.ping07()
+                protocol?.ping07()
                 lastPingAt = now
                 addLog("wait: belt ещё не поехал, повтор 07")
             }
@@ -591,7 +583,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.update(transform)
-    fun setProtocolType(type: ProtocolType) { settingsStore.update { it.copy(protocol = type) } }
     fun setHrMode(mode: HrMode) { settingsStore.update { it.copy(hrMode = mode) } }
 
     private fun addLog(line: String) {
@@ -600,8 +591,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearLogs() { _logs.value = emptyList() }
-
-    private fun String.toUuidSafe(): UUID? = try { UUID.fromString(this) } catch (_: Exception) { null }
 
     override fun onCleared() {
         super.onCleared()
