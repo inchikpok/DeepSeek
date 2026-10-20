@@ -728,6 +728,9 @@ private fun TimePickerDialog(
     val values = remember { (0..3600 step 5).toList() }
     var selectedIndex by remember { mutableIntStateOf((initialSeconds / 5).coerceIn(0, values.size - 1)) }
     
+    // 🚀 Вычисляем темную тему ЗАРАНЕЕ
+    val isDark = isSystemInDarkTheme()
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp), 
@@ -756,7 +759,8 @@ private fun TimePickerDialog(
                             setOnValueChangedListener { _, _, newVal ->
                                 selectedIndex = newVal
                             }
-                            val color = if (isSystemInDarkTheme()) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+                            // 🚀 Используем предвычисленный isDark
+                            val color = if (isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK
                             try {
                                 val f = NumberPicker::class.java.getDeclaredField("mSelectorWheelPaint")
                                 f.isAccessible = true
