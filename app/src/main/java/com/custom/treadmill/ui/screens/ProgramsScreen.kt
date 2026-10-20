@@ -9,6 +9,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -466,9 +468,15 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
 }
 
 // ==========================================
-// 🚀 ИСПРАВЛЕННЫЙ РЕДАКТОР (ЦВЕТА И КУРСОР)
+// 🚀 РЕДАКТОР С DRAG & DROP И БЕЗ ПЕРЕСЧЕТА
 // ==========================================
-private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
+private data class SegmentEdit(
+    val id: Long = System.nanoTime(),
+    val name: String = "", 
+    val durationSec: Int = 60, 
+    val speedKmh: Double = 5.0, 
+    val inclinePercent: Double = 0.0
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -477,8 +485,8 @@ private fun ProgramEditorScreen(
 ) {
     val segments = remember(initial) {
         mutableStateListOf<SegmentEdit>().apply {
-            initial.segments.forEach { add(SegmentEdit(it.name, it.durationSec, it.speedKmh, it.inclinePercent)) }
-            if (isEmpty()) add(SegmentEdit("Разминка", 300, 5.0, 0.0))
+            initial.segments.forEach { add(SegmentEdit(name = it.name, durationSec = it.durationSec, speedKmh = it.speedKmh, inclinePercent = it.inclinePercent)) }
+            if (isEmpty()) add(SegmentEdit(name = "Разминка", durationSec = 300, speedKmh = 5.0, inclinePercent = 0.0))
         }
     }
     var name by remember(initial) { mutableStateOf(initial.name) }
@@ -511,7 +519,7 @@ private fun ProgramEditorScreen(
                             Button(
                                 onClick = { 
                                     val last = segments.lastOrNull()
-                                    segments.add(SegmentEdit("Сегмент ${segments.size + 1}", 60, last?.speedKmh ?: 5.0, last?.inclinePercent ?: 0.0)) 
+                                    segments.add(SegmentEdit(name = "Сегмент ${segments.size + 1}", durationSec = 60, speedKmh = last?.speedKmh ?: 5.0, inclinePercent = last?.inclinePercent ?: 0.0)) 
                                 },
                                 modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(10.dp)
                             ) {
@@ -543,14 +551,18 @@ private fun ProgramEditorScreen(
                     Text("Сегменты", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Spacer(Modifier.height(6.dp))
                     
-                    LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-                        itemsIndexed(segments) { index, seg ->
+                    LazyColumn(
+                        modifier = Modifier.weight(1f), 
+                        verticalArrangement = Arrangement.spacedBy(8.dp), 
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
+                        itemsIndexed(segments, key = { _, item -> item.id }) { index, seg ->
                             SegmentEditor(
                                 index = index, total = segments.size, seg = seg,
                                 onChange = { newSeg -> segments[index] = newSeg },
                                 onMoveUp = { if (index > 0) { val tmp = segments[index - 1]; segments[index - 1] = segments[index]; segments[index] = tmp } },
                                 onMoveDown = { if (index < segments.size - 1) { val tmp = segments[index + 1]; segments[index + 1] = segments[index]; segments[index] = tmp } },
-                                onDuplicate = { segments.add(index + 1, seg.copy(name = seg.name + " (копия)")) },
+                                onDuplicate = { segments.add(index + 1, seg.copy(id = System.nanoTime(), name = seg.name + " (копия)")) },
                                 onDelete = { if (segments.size > 1) segments.removeAt(index) },
                                 canDelete = segments.size > 1
                             )
@@ -646,18 +658,18 @@ private fun SegmentEditor(
     index: Int, total: Int, seg: SegmentEdit,
     onChange: (SegmentEdit) -> Unit, onMoveUp: () -> Unit, onMoveDown: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit, canDelete: Boolean
 ) {
-    var nameState by remember(seg) { mutableStateOf(seg.name) }
-    
-    var minState by remember(seg.durationSec) { mutableStateOf((seg.durationSec / 60).toString()) }
-    var secState by remember(seg.durationSec) { mutableStateOf((seg.durationSec % 60).toString()) }
+    // Больше не используем remember(seg.durationSec), чтобы не было пересчета
+    var nameState by remember { mutableStateOf(seg.name) }
+    var minState by remember { mutableStateOf((seg.durationSec / 60).toString()) }
+    var secState by remember { mutableStateOf((seg.durationSec % 60).toString()) }
     fun updateTime() {
         val m = minState.toIntOrNull() ?: 0
         val s = secState.toIntOrNull() ?: 0
         onChange(seg.copy(durationSec = m * 60 + s))
     }
 
-    var speedState by remember(seg.speedKmh) { mutableStateOf(seg.speedKmh.toString()) }
-    var inclineState by remember(seg.inclinePercent) { mutableStateOf(seg.inclinePercent.toString()) }
+    var speedState by remember { mutableStateOf(seg.speedKmh.toString()) }
+    var inclineState by remember { mutableStateOf(seg.inclinePercent.toString()) }
 
     Card(
         Modifier.fillMaxWidth(), 
@@ -700,10 +712,32 @@ private fun SegmentEditor(
 
                 Spacer(Modifier.width(4.dp))
                 
-                Column {
-                    Row {
-                        IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.ArrowUpward, null, modifier = Modifier.size(16.dp)) }
-                        IconButton(onClick = onMoveDown, enabled = index < total - 1, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.ArrowDownward, null, modifier = Modifier.size(16.dp)) }
+                // DRAG HANDLE + КНОПКИ
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .pointerInput(Unit) {
+                                var dragY = 0f
+                                detectDragGestures(
+                                    onDragEnd = { dragY = 0f },
+                                    onDragCancel = { dragY = 0f },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        dragY += dragAmount.y
+                                        if (dragY > 60f) {
+                                            if (index < total - 1) onMoveDown()
+                                            dragY = 0f
+                                        } else if (dragY < -60f) {
+                                            if (index > 0) onMoveUp()
+                                            dragY = 0f
+                                        }
+                                    }
+                                )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Menu, contentDescription = "Перетащить", tint = MaterialTheme.colorScheme.primary)
                     }
                     Row {
                         IconButton(onClick = onDuplicate, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp)) }
