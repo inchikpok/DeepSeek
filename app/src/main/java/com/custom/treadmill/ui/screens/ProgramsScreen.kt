@@ -7,12 +7,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -55,7 +56,6 @@ import com.custom.treadmill.data.database.ProgramSegment
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import com.custom.treadmill.ui.viewmodels.ProgramViewModel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -479,7 +479,7 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
 }
 
 // ==========================================
-// 🚀 НОВЫЙ РЕДАКТОР С ПЕРЕТАСКИВАНИЕМ
+// 🚀 НОВЫЙ РЕДАКТОР С ПЕРЕТАСКИВАНИЕМ (FIXED)
 // ==========================================
 private data class SegmentEdit(
     val id: String = UUID.randomUUID().toString(),
@@ -489,7 +489,7 @@ private data class SegmentEdit(
     val inclinePercent: Double = 0.0
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ProgramEditorScreen(
     initial: ProgramData, isNew: Boolean, onShowMessage: (String) -> Unit, onSave: (ProgramData) -> Unit, onDismiss: () -> Unit
@@ -506,7 +506,6 @@ private fun ProgramEditorScreen(
     val listState = rememberLazyListState()
     val haptics = LocalHapticFeedback.current
     
-    // Переменные для Drag-and-Drop
     var draggedItemIndex by remember { mutableStateOf<Int?>(null) }
     var draggedOffset by remember { mutableStateOf(0f) }
     val itemHeights = remember { mutableStateMapOf<Int, Int>() }
@@ -613,15 +612,12 @@ private fun ProgramEditorScreen(
                                                 if (shift != 0) {
                                                     val targetIndex = (index + shift).coerceIn(0, segments.size - 1)
                                                     if (targetIndex != index) {
-                                                        // Меняем местами в списке
                                                         val item = segments.removeAt(index)
                                                         segments.add(targetIndex, item)
                                                         
-                                                        // Обновляем состояние перетаскивания
                                                         draggedItemIndex = targetIndex
                                                         draggedOffset -= shift * itemHeight
                                                         
-                                                        // Виброотклик при пересечении границы
                                                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                     }
                                                 }
@@ -678,7 +674,6 @@ private fun SlimTextField(
     }
 }
 
-// 🚀 КНОПКА С АВТО-ПОВТОРОМ И ВИБРО
 @Composable
 private fun HoldableStepButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -693,18 +688,18 @@ private fun HoldableStepButton(
     LaunchedEffect(isPressed) {
         if (isPressed && enabled) {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            onClick() // Мгновенный отклик при нажатии
-            delay(400) // Задержка перед ускорением
+            onClick()
+            delay(400)
             while (true) {
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onClick()
-                delay(50) // Быстрое повторение
+                delay(50)
             }
         }
     }
 
     IconButton(
-        onClick = { /* Обрабатывается через LaunchedEffect */ },
+        onClick = { /* Handled by LaunchedEffect */ },
         enabled = enabled,
         interactionSource = interactionSource,
         modifier = modifier
@@ -724,7 +719,6 @@ private fun HoldableStepButton(
     }
 }
 
-// 🚀 ДИАЛОГ ВЫБОРА ВРЕМЕНИ (Wheel Picker)
 @Composable
 private fun TimePickerDialog(
     initialSeconds: Int,
@@ -733,8 +727,7 @@ private fun TimePickerDialog(
 ) {
     val values = remember { (0..3600 step 5).toList() }
     var selectedIndex by remember { mutableIntStateOf((initialSeconds / 5).coerceIn(0, values.size - 1)) }
-    val context = LocalContext.current
-
+    
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp), 
@@ -763,7 +756,6 @@ private fun TimePickerDialog(
                             setOnValueChangedListener { _, _, newVal ->
                                 selectedIndex = newVal
                             }
-                            // Настройка цвета текста (для темной/светлой темы)
                             val color = if (isSystemInDarkTheme()) android.graphics.Color.WHITE else android.graphics.Color.BLACK
                             try {
                                 val f = NumberPicker::class.java.getDeclaredField("mSelectorWheelPaint")
@@ -816,9 +808,7 @@ private fun SegmentEditor(
     ) {
         Column(Modifier.padding(12.dp)) {
             
-            // --- ШАПКА СЕГМЕНТА ---
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                // Ручка для перетаскивания
                 Icon(
                     imageVector = Icons.Default.Menu,
                     contentDescription = "Перетащить",
@@ -868,7 +858,6 @@ private fun SegmentEditor(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
             Spacer(Modifier.height(8.dp))
 
-            // --- ВРЕМЯ ---
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Время", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -898,7 +887,6 @@ private fun SegmentEditor(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
             Spacer(Modifier.height(8.dp))
 
-            // --- СКОРОСТЬ ---
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Скорость (км/ч)", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -927,7 +915,6 @@ private fun SegmentEditor(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
             Spacer(Modifier.height(8.dp))
 
-            // --- НАКЛОН ---
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Наклон (%)", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
