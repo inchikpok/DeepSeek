@@ -123,7 +123,6 @@ class FTMSProtocol : ITreadmillProtocol {
         val c = conn ?: return
         val raw = (percent * 10.0).roundToInt().coerceIn(0, 32767)
         sendMutex.withLock {
-            // Возвращаем стандартную команду 0x03 (лог подтвердил, что она работает)
             c.write(uuid, byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
         }
     }
@@ -168,7 +167,6 @@ class FTMSProtocol : ITreadmillProtocol {
         }
 
         sendMutex.withLock {
-            // [ФИКС] Используем команду 08 01, которая сбрасывает таймер на дорожке!
             conn?.write(uuid, byteArrayOf(0x08, 0x01), true)
         }
         log("стоп (08 01)")
@@ -180,12 +178,7 @@ class FTMSProtocol : ITreadmillProtocol {
         lastRequestedSpeed = v
         lastSpeedSentAt = System.currentTimeMillis()
 
-        val beltRunning = _data.value.speedKmh >= 0.5
-        if (!beltRunning) {
-            log("скорость $v (сохранено, belt стоит)")
-            return true
-        }
-
+        // [ФИКС] Убрана проверка beltRunning. Команда отправляется всегда.
         sendSpeedRaw(v)
         log("скорость $v")
         return true
@@ -193,11 +186,8 @@ class FTMSProtocol : ITreadmillProtocol {
 
     override suspend fun setIncline(percent: Double): Boolean {
         val t = if (roundInclineToWhole) percent.coerceIn(0.0, 30.0).roundToInt().toDouble() else percent.coerceIn(0.0, 30.0)
-        val beltRunning = _data.value.speedKmh >= 0.5
-        if (!beltRunning) {
-            log("наклон $t% (сохранено, belt стоит)")
-            return true
-        }
+        
+        // [ФИКС] Убрана проверка beltRunning. Команда отправляется всегда.
         sendInclineRaw(t)
         log("наклон $t%")
         return true
