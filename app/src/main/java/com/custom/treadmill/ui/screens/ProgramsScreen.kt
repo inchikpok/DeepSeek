@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack // 🚀 ДОБАВЛЕН ИМПОРТ
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.FileUpload
@@ -522,7 +523,6 @@ private fun ProgramEditorScreen(
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
                     
-                    // Верхние поля через SlimTextField, чтобы они были тонкими и без обрезки
                     SlimTextField(
                         value = name, 
                         onValueChange = { name = it }, 
@@ -560,7 +560,6 @@ private fun ProgramEditorScreen(
     }
 }
 
-// 🚀 Кастомное поле без обрезки текста и лишних отступов
 @Composable
 private fun SlimTextField(
     value: String,
@@ -607,7 +606,6 @@ private fun SlimTextField(
     )
 }
 
-// 🚀 Компактный ввод чисел
 @Composable
 private fun CompactNumberField(
     value: String,
@@ -675,7 +673,6 @@ private fun SegmentEditor(
         shape = RoundedCornerShape(10.dp)
     ) {
         Column(Modifier.padding(10.dp)) {
-            // Шапка
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(22.dp)) {
                     Box(contentAlignment = Alignment.Center) {
@@ -709,7 +706,6 @@ private fun SegmentEditor(
 
             Spacer(Modifier.height(8.dp))
 
-            // Время
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Время:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(65.dp))
                 CompactNumberField(value = minState, onValueChange = { minState = it; updateTime() }, suffix = "мин", modifier = Modifier.weight(1f))
@@ -718,7 +714,6 @@ private fun SegmentEditor(
             
             Spacer(Modifier.height(6.dp))
 
-            // Скорость
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Скорость:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(65.dp), maxLines = 1, softWrap = false)
                 Slider(
@@ -745,7 +740,6 @@ private fun SegmentEditor(
 
             Spacer(Modifier.height(6.dp))
 
-            // Наклон
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Наклон:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(65.dp), maxLines = 1, softWrap = false)
                 Slider(
