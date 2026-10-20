@@ -8,6 +8,8 @@ import com.custom.treadmill.DebugLog
 import com.custom.treadmill.TreadmillApp
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.database.WorkoutLogEntity
+import com.custom.treadmill.logic.HeartRateController
+import com.custom.treadmill.logic.TtsManager
 import com.custom.treadmill.logic.WorkoutManager
 import com.custom.treadmill.service.TreadmillService
 import com.custom.treadmill.ui.components.HrPoint
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class TreadmillSession(private val appContext: Context) {
 
@@ -42,6 +45,7 @@ class TreadmillSession(private val appContext: Context) {
     private var hrStateJob: Job? = null
     private var hrNotifyJob: Job? = null
     private var hrLogJob: Job? = null
+    private var autoHrJob: Job? = null
 
     private val _treadmillState = MutableStateFlow(BleConnectionState.DISCONNECTED)
     val treadmillState: StateFlow<BleConnectionState> = _treadmillState.asStateFlow()
@@ -85,7 +89,6 @@ class TreadmillSession(private val appContext: Context) {
     private val _uiCalories = MutableStateFlow(0)
     val uiCalories: StateFlow<Int> = _uiCalories.asStateFlow()
 
-    // [DEBUGLOG] Единый хаб логов вместо локального _logs
     val logs: StateFlow<List<String>> = DebugLog.lines
 
     private var lastSpeedCmdTime = 0L
@@ -106,8 +109,12 @@ class TreadmillSession(private val appContext: Context) {
     private var speedSum = 0.0; private var speedCount = 0L
     private var workoutLogSaved = false
 
+    // [TTS] и [AUTO-HR]
+    private val tts: TtsManager get() = (appContext as TreadmillApp).ttsManager
+    private var lastAutoHrEnabled: Boolean = false
+    private var lastSpokenSegmentIndex: Int = -1
+
     init {
-        // [DEBUGLOG] Инициализация хаба логирования (файл + память)
         DebugLog.init(appContext)
 
         scope.launch { ble.scanLog.collect { addLog(it) } }
@@ -132,8 +139,7 @@ class TreadmillSession(private val appContext: Context) {
                 if (d.speedKmh > 0.05) { speedSum += d.speedKmh; speedCount++ }
                 val now = System.currentTimeMillis()
                 val isWorkoutRunning = workoutManager.state.value.running
-                
-                // [ФИКС] Не сбрасываем заданные значения, если идет программа
+
                 if (!isStartingBelt && !isWorkoutRunning && now - lastSpeedCmdTime > 3500 && abs(_targetSpeed.value - d.speedKmh) > 0.1) {
                     _targetSpeed.value = d.speedKmh
                 }
@@ -142,7 +148,130 @@ class TreadmillSession(private val appContext: Context) {
                 }
             }
         }
+
+        // [AUTO-HR] Автостарт/автостоп цикла при переключении свитча
+        scope.launch {
+            settingsStore.settings.collect { s ->
+                if (s.hrEnabled != lastAutoHrEnabled) {
+                    lastAutoHrEnabled = s.hrEnabled
+                    restartAutoHrLoop()
+                }
+            }
+        }
+
+        // [TTS] Озвучка смены сегмента (стартовое сообщение даёт startWorkout())
+        scope.launch {
+            workoutManager.state.collect { ws ->
+                if (!ws.running) {
+                    lastSpokenSegmentIndex = -1
+                    return@collect
+                }
+                if (ws.paused) return@collect
+                val idx = ws.currentSegmentIndex
+                if (idx == lastSpokenSegmentIndex) return@collect
+                // Сегмент 1 уже озвучен из startWorkout() — не дублируем
+                if (idx == 0 && lastSpokenSegmentIndex == -1) {
+                    lastSpokenSegmentIndex = 0
+                    return@collect
+                }
+                lastSpokenSegmentIndex = idx
+                speakSegmentChange(idx, ws.totalSegments, ws.currentSegmentName)
+            }
+        }
+
         startMetricsLoop()
+    }
+
+    // ===================================================================
+    //  TTS хелперы
+    // ===================================================================
+
+    private fun speak(text: String) {
+        if (!settingsStore.settings.value.ttsEnabled) return
+        tts.speak(text)
+        addLog("TTS: $text")
+    }
+
+    private fun speakSegmentChange(idx: Int, total: Int, name: String) {
+        scope.launch {
+            // Небольшая задержка: пусть onSetSpeed/onSetIncline в WorkoutManager
+            // успеют обновить _targetSpeed/_targetIncline перед озвучкой.
+            delay(150L)
+            val n = idx + 1
+            val spd = _targetSpeed.value
+            val inc = _targetIncline.value
+            speak(
+                "Сегмент $n из $total: ${name.ifBlank { "Сегмент $n" }}, " +
+                "скорость ${fmtSpeed(spd)}, угол ${fmtAngle(inc)}"
+            )
+        }
+    }
+
+    private fun fmtSpeed(kmh: Double): String {
+        val n = kmh.roundToInt()
+        val word = when {
+            (n % 100) in 11..14 -> "километров"
+            (n % 10) == 1 -> "километр"
+            (n % 10) in 2..4 -> "километра"
+            else -> "километров"
+        }
+        return "$n $word в час"
+    }
+
+    private fun fmtAngle(pct: Double): String {
+        val n = pct.roundToInt()
+        val word = when {
+            (n % 100) in 11..14 -> "процентов"
+            (n % 10) == 1 -> "процент"
+            (n % 10) in 2..4 -> "процента"
+            else -> "процентов"
+        }
+        return "$n $word"
+    }
+
+    // ===================================================================
+    //  Auto-HR цикл
+    // ===================================================================
+
+    private fun restartAutoHrLoop() {
+        autoHrJob?.cancel()
+        autoHrJob = null
+
+        val s = settingsStore.settings.value
+        if (!s.hrEnabled) return
+        if (_treadmillState.value != BleConnectionState.READY) return
+
+        autoHrJob = scope.launch {
+            addLog("AutoHR: цикл запущен (интервал ${s.intervalSec}с, режим ${s.hrMode})")
+            while (isActive) {
+                val cur = settingsStore.settings.value
+                if (!cur.hrEnabled) break
+                if (_treadmillState.value != BleConnectionState.READY) break
+
+                delay(cur.intervalSec * 1000L)
+
+                val s2 = settingsStore.settings.value
+                if (!s2.hrEnabled) break
+                if (_treadmillState.value != BleConnectionState.READY) break
+
+                // Не мешаем программе и ручной паузе
+                val ws = workoutManager.state.value
+                if (ws.running || ws.paused) continue
+                if (_isPaused.value) continue
+
+                val hr = _heartRate.value
+                if (hr <= 0) continue
+                val beltSpeed = _treadmillData.value.speedKmh
+                if (beltSpeed < 0.5) continue
+
+                val newSpeed = HeartRateController.evaluate(s2, hr, beltSpeed)
+                if (newSpeed != null) {
+                    addLog("AutoHR: пульс=$hr, скорость $beltSpeed → $newSpeed")
+                    setSpeed(newSpeed)
+                }
+            }
+            addLog("AutoHR: цикл остановлен")
+        }
     }
 
     fun showMessage(msg: String) {
@@ -269,6 +398,7 @@ class TreadmillSession(private val appContext: Context) {
             _statusMessage.value = if (ok) "Дорожка готова" else "Не найдены характеристики"
             _targetSpeed.value = _treadmillData.value.speedKmh
             _targetIncline.value = _treadmillData.value.inclinePercent
+            restartAutoHrLoop()
         }
     }
 
@@ -284,6 +414,8 @@ class TreadmillSession(private val appContext: Context) {
         treadmillStateJob?.cancel()
         treadmillNotifyJob?.cancel()
         treadmillLogJob?.cancel()
+        autoHrJob?.cancel()
+        autoHrJob = null
         treadmillConn?.disconnect()
         treadmillConn = null
         protocol = null
@@ -379,6 +511,7 @@ class TreadmillSession(private val appContext: Context) {
     fun startTreadmill() {
         if (_treadmillState.value != BleConnectionState.READY) return
         val isResume = _isPaused.value
+        if (isResume) speak("Продолжаем")
         if (!isResume) resetMetrics()
         val resumeSpeed = if (isResume) speedBeforePause else 0.0
         if (isResume && resumeSpeed > 0.5) _targetSpeed.value = resumeSpeed
@@ -409,6 +542,7 @@ class TreadmillSession(private val appContext: Context) {
         _isPaused.value = true
         scope.launch { protocol?.stop() }
         _statusMessage.value = "Пауза"
+        speak("Пауза")
     }
 
     fun togglePauseTreadmill() {
@@ -429,6 +563,7 @@ class TreadmillSession(private val appContext: Context) {
         resetMetrics()
         workoutLogSaved = false
         _isPaused.value = false
+        lastSpokenSegmentIndex = 0  // «Сегмент 1» озвучим сами
 
         isStartingBelt = true
         scope.launch {
@@ -438,14 +573,14 @@ class TreadmillSession(private val appContext: Context) {
                 if (waitForBeltRunning(0.9, 30000L)) {
                     workoutManager.start(
                         scope = scope, program = program,
-                        onSetSpeed = { 
+                        onSetSpeed = {
                             val s = settingsStore.settings.value
                             val safe = it.coerceIn(s.minSpeedKmh, s.maxSpeedKmh)
                             _targetSpeed.value = safe
                             lastSpeedCmdTime = System.currentTimeMillis()
                             protocol?.setSpeed(safe)
                         },
-                        onSetIncline = { 
+                        onSetIncline = {
                             val s = settingsStore.settings.value
                             val safe = it.coerceIn(0.0, s.maxInclinePercent)
                             _targetIncline.value = safe
@@ -453,12 +588,30 @@ class TreadmillSession(private val appContext: Context) {
                             protocol?.setIncline(safe)
                         },
                         onFinish = {
+                            // Считаем ДО saveWorkoutLog(), иначе hrSum/hrCount обнулятся
+                            val avgHr = if (hrCount > 0) (hrSum / hrCount).toInt() else 0
+                            val dist = _uiDistanceKm.value
+
                             protocol?.stop()
                             _isPaused.value = false
-                            saveWorkoutLog() // [ФИКС] Автосохранение тренировки
-                            showMessage("Тренировка завершена!") // [ФИКС] Уведомление
+                            saveWorkoutLog()
+                            showMessage("Тренировка завершена!")
+
+                            val distStr = "%.1f".format(dist).replace(".", ",")
+                            speak("Тренировка завершена. Дистанция $distStr км, средний пульс $avgHr")
                         }
                     )
+
+                    val first = program.segments.firstOrNull()
+                    if (first != null) {
+                        val s = settingsStore.settings.value
+                        val safeSpeed = first.speedKmh.coerceIn(s.minSpeedKmh, s.maxSpeedKmh)
+                        speak(
+                            "Тренировка «${program.name}» началась. " +
+                            "Сегмент 1: ${first.name.ifBlank { "Сегмент 1" }}, " +
+                            "скорость ${fmtSpeed(safeSpeed)}"
+                        )
+                    }
                 }
             } finally {
                 isStartingBelt = false
@@ -466,19 +619,26 @@ class TreadmillSession(private val appContext: Context) {
         }
     }
 
-    fun pauseWorkout() { workoutManager.pause(); scope.launch { protocol?.stop() } }
+    fun pauseWorkout() {
+        workoutManager.pause()
+        scope.launch { protocol?.stop() }
+        speak("Пауза")
+    }
+
     fun resumeWorkout() {
+        speak("Продолжаем")
         isStartingBelt = true
         scope.launch {
             try {
                 protocol?.start()
-                setSpeed(1.0) // Разбудить дорожку
+                setSpeed(1.0)
                 if (waitForBeltRunning(0.9, 30000L)) workoutManager.resume()
             } finally {
                 isStartingBelt = false
             }
         }
     }
+
     fun togglePauseWorkout() {
         val s = workoutManager.state.value
         if (s.paused) resumeWorkout() else pauseWorkout()
@@ -535,7 +695,6 @@ class TreadmillSession(private val appContext: Context) {
         val bytes = try { hex.hexToBytes() } catch (e: Exception) {
             addLog("Ошибка hex: ${e.message}"); return false
         }
-        // Отправляем через тот же mutex, что и остальные команды — не будет гонки
         scope.launch {
             val ok = p.sendRaw(bytes)
             addLog("Hex $hex: ${if (ok) "отправлено" else "ОШИБКА"}")
@@ -543,11 +702,9 @@ class TreadmillSession(private val appContext: Context) {
         return true
     }
 
-    // [DEBUGLOG] Все сообщения идут в единый хаб
     private fun addLog(line: String) {
         DebugLog.d("SESSION", line)
     }
 
-    // [DEBUGLOG] Очистка теперь через хаб (чистит и память, и файл)
     fun clearLogs() { DebugLog.clear() }
 }
