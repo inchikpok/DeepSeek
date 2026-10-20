@@ -3,6 +3,7 @@ package com.custom.treadmill.ui.viewmodels
 import android.app.Application
 import android.bluetooth.BluetoothDevice
 import androidx.lifecycle.AndroidViewModel
+import com.custom.treadmill.DebugLog
 import com.custom.treadmill.TreadmillApp
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.repository.AppSettings
@@ -46,46 +47,118 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun showMessage(msg: String) = session.showMessage(msg)
     fun clearStatusMessage() = session.clearStatusMessage()
 
-    // [ФИКС] Сбрасываем режим сканирования, чтобы окно закрывалось
     fun connectTreadmill(device: BluetoothDevice) {
+        DebugLog.d("VM", "connectTreadmill(${device.address})")
         _scanMode.value = ScanMode.NONE
         session.connectTreadmill(device)
     }
 
-    // [ФИКС] То же самое для пульсометра
     fun connectHeartRate(device: BluetoothDevice) {
+        DebugLog.d("VM", "connectHeartRate(${device.address})")
         _scanMode.value = ScanMode.NONE
         session.connectHeartRate(device)
     }
 
-    fun disconnectTreadmill() = session.disconnectTreadmill()
-    fun disconnectHeartRate() = session.disconnectHeartRate()
+    fun disconnectTreadmill() {
+        DebugLog.d("VM", "disconnectTreadmill()")
+        session.disconnectTreadmill()
+    }
+    fun disconnectHeartRate() {
+        DebugLog.d("VM", "disconnectHeartRate()")
+        session.disconnectHeartRate()
+    }
 
-    fun setSpeed(kmh: Double) = session.setSpeed(kmh)
-    fun setIncline(percent: Double) = session.setIncline(percent)
+    fun setSpeed(kmh: Double) {
+        DebugLog.d("VM", "setSpeed(${kmh})")
+        session.setSpeed(kmh)
+    }
+    fun setIncline(percent: Double) {
+        DebugLog.d("VM", "setIncline(${percent})")
+        session.setIncline(percent)
+    }
 
-    fun startTreadmill() = session.startTreadmill()
-    fun pauseTreadmill() = session.pauseTreadmill()
-    fun togglePauseTreadmill() = session.togglePauseTreadmill()
-    fun stopTreadmill() = session.stopTreadmill()
+    fun startTreadmill() {
+        DebugLog.d("VM", "startTreadmill()")
+        session.startTreadmill()
+    }
+    fun pauseTreadmill() {
+        DebugLog.d("VM", "pauseTreadmill()")
+        session.pauseTreadmill()
+    }
+    fun togglePauseTreadmill() {
+        DebugLog.d("VM", "togglePauseTreadmill()")
+        session.togglePauseTreadmill()
+    }
+    fun stopTreadmill() {
+        DebugLog.d("VM", "stopTreadmill()")
+        session.stopTreadmill()
+    }
 
-    fun startWorkout(program: ProgramData) = session.startWorkout(program)
-    fun pauseWorkout() = session.pauseWorkout()
-    fun resumeWorkout() = session.resumeWorkout()
-    fun togglePauseWorkout() = session.togglePauseWorkout()
-    fun stopWorkout() = session.stopWorkout()
-    fun skipWorkoutSegment() = session.skipWorkoutSegment()
-    fun saveWorkoutLog() = session.saveWorkoutLog()
+    fun startWorkout(program: ProgramData) {
+        DebugLog.d("VM", "startWorkout(${program.name})")
+        session.startWorkout(program)
+    }
+    fun pauseWorkout() {
+        DebugLog.d("VM", "pauseWorkout()")
+        session.pauseWorkout()
+    }
+    fun resumeWorkout() {
+        DebugLog.d("VM", "resumeWorkout()")
+        session.resumeWorkout()
+    }
+    fun togglePauseWorkout() {
+        DebugLog.d("VM", "togglePauseWorkout()")
+        session.togglePauseWorkout()
+    }
+    fun stopWorkout() {
+        DebugLog.d("VM", "stopWorkout()")
+        session.stopWorkout()
+    }
+    fun skipWorkoutSegment() {
+        DebugLog.d("VM", "skipWorkoutSegment()")
+        session.skipWorkoutSegment()
+    }
+    fun saveWorkoutLog() {
+        DebugLog.d("VM", "saveWorkoutLog()")
+        session.saveWorkoutLog()
+    }
 
-    fun sendRawHex(hex: String): Boolean = session.sendRawHex(hex)
-    fun setAutoHrEnabled(enabled: Boolean) = session.setAutoHrEnabled(enabled)
-    
-    fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.update(transform)
-    fun setHrMode(mode: HrMode) = settingsStore.update { it.copy(hrMode = mode) }
-    
-    fun startScanTreadmill() { _scanMode.value = ScanMode.TREADMILL; session.startScanTreadmill() }
-    fun startScanHeartRate() { _scanMode.value = ScanMode.HEART_RATE; session.startScanHeartRate() }
-    fun stopScan() { _scanMode.value = ScanMode.NONE; session.stopScan() }
-    
-    fun clearLogs() = session.clearLogs()
+    fun sendRawHex(hex: String): Boolean {
+        DebugLog.d("VM", "sendRawHex($hex)")
+        return session.sendRawHex(hex)
+    }
+    fun setAutoHrEnabled(enabled: Boolean) {
+        DebugLog.d("VM", "setAutoHrEnabled($enabled)")
+        session.setAutoHrEnabled(enabled)
+    }
+
+    fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        DebugLog.d("VM", "updateSettings()")
+        settingsStore.update(transform)
+    }
+    fun setHrMode(mode: HrMode) {
+        DebugLog.d("VM", "setHrMode($mode)")
+        settingsStore.update { it.copy(hrMode = mode) }
+    }
+
+    fun startScanTreadmill() {
+        DebugLog.d("VM", "startScanTreadmill()")
+        _scanMode.value = ScanMode.TREADMILL
+        session.startScanTreadmill()
+    }
+    fun startScanHeartRate() {
+        DebugLog.d("VM", "startScanHeartRate()")
+        _scanMode.value = ScanMode.HEART_RATE
+        session.startScanHeartRate()
+    }
+    fun stopScan() {
+        DebugLog.d("VM", "stopScan()")
+        _scanMode.value = ScanMode.NONE
+        session.stopScan()
+    }
+
+    fun clearLogs() {
+        DebugLog.d("VM", "clearLogs()")
+        session.clearLogs()
+    }
 }
