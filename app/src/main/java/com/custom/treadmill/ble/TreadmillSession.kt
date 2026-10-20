@@ -434,7 +434,7 @@ class TreadmillSession(private val appContext: Context) {
         scope.launch {
             try {
                 protocol?.start()
-                setSpeed(1.0) // Разбудить дорожку
+                setSpeed(1.0)
                 if (waitForBeltRunning(0.9, 30000L)) {
                     workoutManager.start(
                         scope = scope, program = program,
@@ -443,18 +443,20 @@ class TreadmillSession(private val appContext: Context) {
                             val safe = it.coerceIn(s.minSpeedKmh, s.maxSpeedKmh)
                             _targetSpeed.value = safe
                             lastSpeedCmdTime = System.currentTimeMillis()
-                            protocol?.setSpeed(safe) // Ждем выполнения
+                            protocol?.setSpeed(safe)
                         },
                         onSetIncline = { 
                             val s = settingsStore.settings.value
                             val safe = it.coerceIn(0.0, s.maxInclinePercent)
                             _targetIncline.value = safe
                             lastInclineCmdTime = System.currentTimeMillis()
-                            protocol?.setIncline(safe) // Ждем выполнения
+                            protocol?.setIncline(safe)
                         },
                         onFinish = {
                             protocol?.stop()
                             _isPaused.value = false
+                            saveWorkoutLog() // [ФИКС] Автосохранение тренировки
+                            showMessage("Тренировка завершена!") // [ФИКС] Уведомление
                         }
                     )
                 }
