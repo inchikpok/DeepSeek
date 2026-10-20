@@ -529,11 +529,16 @@ class TreadmillSession(private val appContext: Context) {
     }
 
     fun sendRawHex(hex: String): Boolean {
-        val conn = treadmillConn ?: return false
-        val uuid = protocol?.writeCharacteristicUuid ?: return false
-        return try { conn.write(uuid, hex.hexToBytes(), true) } catch (e: Exception) {
-            addLog("Ошибка hex: ${e.message}"); false
+        val p = protocol ?: return false
+        val bytes = try { hex.hexToBytes() } catch (e: Exception) {
+            addLog("Ошибка hex: ${e.message}"); return false
         }
+        // Отправляем через тот же mutex, что и остальные команды — не будет гонки
+        scope.launch {
+            val ok = p.sendRaw(bytes)
+            addLog("Hex $hex: ${if (ok) "отправлено" else "ОШИБКА"}")
+        }
+        return true
     }
 
     // [DEBUGLOG] Все сообщения идут в единый хаб
