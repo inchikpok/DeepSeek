@@ -36,7 +36,7 @@ object HeartRateZoneCalculator {
         return if (settings.autoMaxHr) {
             calculateMaxHr(settings.age, settings.isMale)
         } else {
-            settings.maxHr
+            settings.maxHr.coerceAtLeast(settings.restingHr + 20)
         }
     }
 }
