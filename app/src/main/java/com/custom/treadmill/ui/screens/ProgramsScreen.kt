@@ -37,6 +37,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -314,7 +315,7 @@ fun ProgramsScreen(
 }
 
 // ==========================================================
-//  ОБНОВЛЕННЫЙ ГРАФИК (Скорость цветом, Наклон заливкой)
+//  ГРАФИК: Скорость цветом + Наклон пунктирными линиями
 // ==========================================================
 @Composable
 private fun WorkoutMiniChart(
@@ -337,9 +338,6 @@ private fun WorkoutMiniChart(
         var currentX = 0f
         val gap = 1.5f
 
-        val inclinePath = Path()
-        var first = true
-
         val textPaint = android.graphics.Paint().apply {
             color = textColor.toArgb()
             textSize = 9.sp.toPx()
@@ -347,71 +345,53 @@ private fun WorkoutMiniChart(
             isAntiAlias = true
         }
 
-        // 1. Рисуем столбики скорости
         segments.forEach { seg ->
             val segW = (seg.durationSec.toFloat() / totalSec) * w
             val drawW = (segW - gap).coerceAtLeast(1f)
             
+            // 1. Рисуем столбик скорости (цвет зависит от скорости)
             val speedH = (seg.speedKmh.toFloat() / maxSpeed.toFloat()) * chartH * 0.9f
-
-            val color = when {
-                seg.speedKmh < 6.0 -> Color(0xFF29B6F6)  // Голубой (Ходьба)
-                seg.speedKmh < 9.0 -> Color(0xFF66BB6A)  // Зелёный (Лёгкий бег)
-                seg.speedKmh < 12.0 -> Color(0xFFFFCA28) // Жёлтый (Темповый)
-                seg.speedKmh < 15.0 -> Color(0xFFFF7043) // Оранжевый (Быстрый)
-                else -> Color(0xFFE53935)                // Красный (Спринт)
+            val speedColor = when {
+                seg.speedKmh < 6.0 -> Color(0xFF29B6F6)  // Голубой
+                seg.speedKmh < 9.0 -> Color(0xFF66BB6A)  // Зелёный
+                seg.speedKmh < 12.0 -> Color(0xFFFFCA28) // Жёлтый
+                seg.speedKmh < 15.0 -> Color(0xFFFF7043) // Оранжевый
+                else -> Color(0xFFE53935)                // Красный
             }
             
             drawRoundRect(
-                color = color,
+                color = speedColor,
                 topLeft = Offset(currentX + gap/2, chartH - speedH),
                 size = Size(drawW, speedH),
                 cornerRadius = CornerRadius(2f, 2f)
             )
-            currentX += segW
-        }
 
-        // 2. Рисуем заливку для наклона (поверх столбиков, но полупрозрачно)
-        currentX = 0f
-        val inclineFillPath = Path()
-        
-        segments.forEach { seg ->
-            val segW = (seg.durationSec.toFloat() / totalSec) * w
-            val inclineH = (seg.inclinePercent.toFloat() / maxIncline.toFloat()) * chartH * 0.9f
-            val y = chartH - inclineH
-
-            // Начинаем путь от нижнего левого угла
-            if (first) {
-                inclinePath.moveTo(0f, chartH)
-                inclinePath.lineTo(0f, y)
-                inclineFillPath.moveTo(0f, chartH)
-                inclineFillPath.lineTo(0f, y)
-                first = false
+            // 2. Рисуем наклон горизонтальной пунктирной линией
+            if (maxIncline > 0) {
+                val inclineH = (seg.inclinePercent.toFloat() / maxIncline.toFloat()) * chartH * 0.9f
+                val y = chartH - inclineH
+                val startX = currentX + gap/2
+                val endX = currentX + segW - gap/2
+                
+                // Линия наклона
+                val linePath = Path().apply {
+                    moveTo(startX, y)
+                    lineTo(endX, y)
+                }
+                
+                drawPath(
+                    path = linePath,
+                    color = Color(0xFFAB47BC).copy(alpha = 0.9f),
+                    style = Stroke(
+                        width = 2.dp.toPx(),
+                        cap = StrokeCap.Round,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()), 0f)
+                    )
+                )
             }
-            
-            // Рисуем плоскую линию для сегмента (наклон постоянен)
-            inclinePath.lineTo(currentX + segW, y)
-            inclineFillPath.lineTo(currentX + segW, y)
 
             currentX += segW
         }
-        
-        // Закрываем путь заливки внизу
-        inclineFillPath.lineTo(w, chartH)
-        inclineFillPath.close()
-
-        // Рисуем фиолетовую полупрозрачную заливку
-        drawPath(
-            path = inclineFillPath,
-            color = Color(0xFFAB47BC).copy(alpha = 0.25f)
-        )
-        
-        // Рисуем контур наклона
-        drawPath(
-            path = inclinePath,
-            color = Color(0xFFAB47BC),
-            style = Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
 
         // 3. Ось времени
         drawLine(axisColor, start = Offset(0f, chartH), end = Offset(w, chartH), strokeWidth = 1.dp.toPx())
@@ -426,7 +406,6 @@ private fun WorkoutMiniChart(
             else -> 30f
         }
 
-        // Рассчитываем количество делений
         val numSteps = ceil((totalMin / stepMin).toDouble()).toInt()
         for (i in 0..numSteps) {
             val m = i * stepMin
@@ -434,16 +413,15 @@ private fun WorkoutMiniChart(
 
             val x = (m / totalMin) * w
             
-            // Небольшая корректировка для последней точки, чтобы текст не вылезал за границы
+            // Корректировка отступа для текста
             val textX = when {
-                i == 0 -> x + 4.dp.toPx() // Первую чуть правее
-                m >= totalMin -> x - 4.dp.toPx() // Последнюю чуть левее
+                i == 0 -> x + 4.dp.toPx()
+                m >= totalMin -> x - 4.dp.toPx()
                 else -> x
             }
 
             drawLine(axisColor, start = Offset(x, chartH), end = Offset(x, chartH - 3.dp.toPx()), strokeWidth = 1.dp.toPx())
             
-            // Округляем и форматируем (если больше 60 мин - переводим в часы)
             val label = when {
                 m < 60 -> "${m.toInt()}"
                 else -> "${(m / 60).toInt()}ч"
