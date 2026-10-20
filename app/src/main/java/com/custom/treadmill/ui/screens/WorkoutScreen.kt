@@ -58,14 +58,7 @@ fun WorkoutScreen(
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // Автосохранение при завершении (на случай, если finish не сработал в сессии)
-    LaunchedEffect(ws.finished) { 
-        if (ws.finished && ws.running) {
-            vm.saveWorkoutLog() 
-        }
-    }
-
-    val targetHr = if (settings.hrMode == HrMode.TARGET) settings.targetHr
+        val targetHr = if (settings.hrMode == HrMode.TARGET) settings.targetHr
                    else (settings.zoneMin + settings.zoneMax) / 2
 
     // Рассчитываем актуальные зоны пульса
