@@ -56,7 +56,6 @@ fun AboutScreen(onBack: () -> Unit) {
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Заголовок
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -71,7 +70,6 @@ fun AboutScreen(onBack: () -> Unit) {
                 Spacer(Modifier.weight(1f))
             }
 
-            // Информация о приложении
             Card(
                 Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
@@ -113,7 +111,6 @@ fun AboutScreen(onBack: () -> Unit) {
                 "minSdk 21 · targetSdk 34 · AGP 8.2.2"
             ))
 
-            // Создание тренировок через JSON
             Card(
                 Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
@@ -126,7 +123,7 @@ fun AboutScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Скопируйте шаблон, отредактируйте в блокноте, сохраните как .json и импортируйте через экран «Программы».",
+                        "Скопируйте шаблон, отредактируйте в любом блокноте, скопируйте обратно и вставьте в «Программы → Из буфера». Никаких файлов сохранять не нужно.",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Spacer(Modifier.height(12.dp))
@@ -213,6 +210,7 @@ private fun copyToClipboard(ctx: Context, label: String, text: String) {
 private fun buildTemplate(): String = """
 {
   "name": "Моя тренировка",
+  "description": "",
   "segments": [
     {
       "name": "Разминка",
@@ -239,30 +237,52 @@ private fun buildTemplate(): String = """
 private fun buildInstructions(): String = """
 КАК СОЗДАТЬ СВОЮ ТРЕНИРОВКУ
 
-1. Скопируйте шаблон (кнопка "Шаблон")
-2. Откройте любой текстовый редактор
+1. Нажмите "Шаблон" — JSON скопируется в буфер
+2. Откройте любой блокнот (Заметки, Google Keep, любой)
 3. Вставьте шаблон
 4. Отредактируйте:
-   - "name" — название тренировки
-   - "segments" — массив сегментов
-   Для каждого сегмента:
-     - "name" — название сегмента
-     - "durationSec" — длительность, секунды (300 = 5 мин)
-     - "speedKmh" — скорость, км/ч (0.5 – 20.0)
-     - "inclinePercent" — наклон, % (0 – 15)
-5. Сохраните как my_workout.json (UTF-8)
-6. Импортируйте через "Программы"
+   - "name" — название программы
+   - "description" — описание (необязательно, оставьте "")
+   - "segments" — список сегментов
 
-ПРИМЕР — интервальная тренировка:
-Разминка: 5 мин × 5 км/ч
-Интервал: 1 мин × 10 км/ч
-Отдых:    1 мин × 5 км/ч
-(повторить 5 раз)
-Заминка:  5 мин × 4 км/ч
+   Поля каждого сегмента:
+   - "name" — название сегмента (строка)
+   - "durationSec" — длительность в СЕКУНДАХ (300 = 5 мин)
+   - "speedKmh" — скорость в км/ч (0.5 – 20.0)
+   - "inclinePercent" — наклон в % (0 – 15)
+
+5. Скопируйте весь текст из блокнота
+6. В приложении откройте "Программы" → "Из буфера"
+7. Готово — программа появится в списке
+
+ВАЖНО:
+- Не удаляйте кавычки и запятые
+- Каждый сегмент в { }
+- Между сегментами запятая, после последнего — нет
+- Можно использовать и целые числа: 300 вместо 300.0
+
+ПРИМЕР — интервалы 5×1мин:
+{
+  "name": "Интервалы 5x1",
+  "description": "5 быстрых отрезков по 1 мин",
+  "segments": [
+    {"name": "Разминка", "durationSec": 300, "speedKmh": 5.0, "inclinePercent": 0.0},
+    {"name": "Интервал 1", "durationSec": 60, "speedKmh": 12.0, "inclinePercent": 1.0},
+    {"name": "Отдых 1", "durationSec": 90, "speedKmh": 6.0, "inclinePercent": 0.0},
+    {"name": "Интервал 2", "durationSec": 60, "speedKmh": 12.0, "inclinePercent": 1.0},
+    {"name": "Отдых 2", "durationSec": 90, "speedKmh": 6.0, "inclinePercent": 0.0},
+    {"name": "Интервал 3", "durationSec": 60, "speedKmh": 12.0, "inclinePercent": 1.0},
+    {"name": "Отдых 3", "durationSec": 90, "speedKmh": 6.0, "inclinePercent": 0.0},
+    {"name": "Интервал 4", "durationSec": 60, "speedKmh": 12.0, "inclinePercent": 1.0},
+    {"name": "Отдых 4", "durationSec": 90, "speedKmh": 6.0, "inclinePercent": 0.0},
+    {"name": "Интервал 5", "durationSec": 60, "speedKmh": 12.0, "inclinePercent": 1.0},
+    {"name": "Заминка", "durationSec": 300, "speedKmh": 4.0, "inclinePercent": 0.0}
+  ]
+}
 
 ОГРАНИЧЕНИЯ:
 - Минимум 1 сегмент
-- durationSec > 0
-- speedKmh: 0.5 – 20.0
-- inclinePercent: 0 – 15
+- durationSec от 10 до 3600
+- speedKmh от 0.5 до 20.0
+- inclinePercent от 0 до 15
 """.trimIndent()
