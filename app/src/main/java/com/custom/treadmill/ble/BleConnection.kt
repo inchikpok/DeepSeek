@@ -54,6 +54,7 @@ class BleConnection(
     val characteristics: StateFlow<List<GattCharInfo>> = _characteristics.asStateFlow()
 
     private val pendingReads = ConcurrentHashMap<UUID, CompletableDeferred<ByteArray?>>()
+    private val pendingWrites = ConcurrentHashMap<UUID, CompletableDeferred<Boolean>>()
 
     private fun log(msg: String) {
         Log.d(tag, msg)
@@ -71,7 +72,6 @@ class BleConnection(
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     _state.value = BleConnectionState.DISCONNECTED
-                    // [ФИКС 12] Закрываем GATT при неожиданном разрыве, чтобы не утекал
                     try {
                         g.close()
                     } catch (_: Exception) {}
@@ -80,6 +80,8 @@ class BleConnection(
                     }
                     pendingReads.values.forEach { it.complete(null) }
                     pendingReads.clear()
+                    pendingWrites.values.forEach { it.complete(false) }
+                    pendingWrites.clear()
                 }
             }
         }
@@ -131,6 +133,8 @@ class BleConnection(
 
         override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
             log("write ${c.uuid} status=$status")
+            // [ФИКС] Сообщаем ожидающей корутине, что запись завершилась
+            pendingWrites.remove(c.uuid)?.complete(status == BluetoothGatt.GATT_SUCCESS)
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
@@ -166,6 +170,8 @@ class BleConnection(
         gatt = null
         pendingReads.values.forEach { it.complete(null) }
         pendingReads.clear()
+        pendingWrites.values.forEach { it.complete(false) }
+        pendingWrites.clear()
         _state.value = BleConnectionState.DISCONNECTED
     }
 
@@ -194,7 +200,7 @@ class BleConnection(
         if (!g.setCharacteristicNotification(c, enable)) {
             log("setCharacteristicNotification($uuid) = false")
         }
-        val cccd = c.getDescriptor(Uuids.CCCD) ?: return enable
+        val cccd = c.getDescriptor(Uuids.CCCD) ?: return false
         val value = when {
             !enable -> BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
             indicate -> BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
@@ -238,14 +244,63 @@ class BleConnection(
         return withTimeoutOrNull(2000L) { deferred.await() }
     }
 
-    fun write(uuid: UUID, data: ByteArray, withResponse: Boolean = true): Boolean {
+    /**
+     * [ФИКС] Suspend-версия записи. Ждёт onCharacteristicWrite callback перед возвратом.
+     * Это гарантирует, что две последовательные команды не будут отправлены одновременно
+     * (Android BLE-стек отклоняет вторую запись, если первая ещё не завершена).
+     */
+    suspend fun writeSuspend(uuid: UUID, data: ByteArray, withResponse: Boolean = true): Boolean {
         val c = findCharacteristic(uuid) ?: run {
-            log("write: характеристика $uuid не найдена")
+            log("writeSuspend: характеристика $uuid не найдена")
             return false
         }
-        return write(c, data, withResponse)
+        return writeSuspend(c, data, withResponse)
     }
 
+    suspend fun writeSuspend(c: BluetoothGattCharacteristic, data: ByteArray, withResponse: Boolean): Boolean {
+        val g = gatt ?: return false
+        log("-> ${c.uuid} ${data.toHex()}")
+
+        val deferred = CompletableDeferred<Boolean>()
+        pendingWrites[c.uuid] = deferred
+
+        val queued = try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                val wt = if (withResponse) BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                g.writeCharacteristic(c, data, wt) == 0
+            } else {
+                @Suppress("DEPRECATION")
+                c.writeType = if (withResponse) BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                @Suppress("DEPRECATION")
+                c.value = data
+                @Suppress("DEPRECATION")
+                g.writeCharacteristic(c)
+            }
+        } catch (e: Exception) {
+            log("Ошибка writeSuspend: ${e.message}")
+            pendingWrites.remove(c.uuid)
+            return false
+        }
+
+        if (!queued) {
+            log("writeSuspend REJECTED for ${c.uuid} (write already in progress)")
+            pendingWrites.remove(c.uuid)
+            return false
+        }
+
+        val result = withTimeoutOrNull(2000L) { deferred.await() }
+        pendingWrites.remove(c.uuid)
+        if (result == null) {
+            log("writeSuspend TIMEOUT for ${c.uuid}")
+            return false
+        }
+        return result
+    }
+
+    /**
+     * Старая версия (не ждёт ACK). Оставлена для обратной совместимости.
+     * Везде в FTMSProtocol используй writeSuspend.
+     */
     fun write(c: BluetoothGattCharacteristic, data: ByteArray, withResponse: Boolean): Boolean {
         val g = gatt ?: return false
         log("-> ${c.uuid} ${data.toHex()}")
@@ -265,6 +320,11 @@ class BleConnection(
             log("Ошибка write: ${e.message}")
             false
         }
+    }
+
+    fun write(uuid: UUID, data: ByteArray, withResponse: Boolean = true): Boolean {
+        val c = findCharacteristic(uuid) ?: return false
+        return write(c, data, withResponse)
     }
 
     fun requestMtu(mtu: Int) {
