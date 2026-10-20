@@ -4,6 +4,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,9 +12,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -137,7 +139,6 @@ fun ProgramsScreen(
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            // Верхняя панель
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -151,11 +152,9 @@ fun ProgramsScreen(
                 }
                 Text("Программы", fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.weight(1f))
                 
-                // Импорт
                 IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
                     Icon(Icons.Outlined.FileUpload, contentDescription = "Импорт из файла")
                 }
-                // Из буфера
                 IconButton(onClick = {
                     try {
                         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -168,7 +167,6 @@ fun ProgramsScreen(
                 }
             }
 
-            // Поиск и сортировка
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -207,7 +205,6 @@ fun ProgramsScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Список
             if (visible.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -305,7 +302,6 @@ fun ProgramsScreen(
     }
 }
 
-// 🎨 СОВРЕМЕННАЯ КАРТОЧКА
 @Composable
 private fun ProgramCardModern(
     entity: ProgramEntity, data: ProgramData, canStart: Boolean,
@@ -325,7 +321,6 @@ private fun ProgramCardModern(
             Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Левая часть: Инфо
             Column(Modifier.weight(1f)) {
                 Text(entity.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (entity.description.isNotBlank()) {
@@ -338,9 +333,7 @@ private fun ProgramCardModern(
                 }
             }
 
-            // Правая часть: Кнопки
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Кнопка Play
                 FilledIconButton(
                     onClick = onStart,
                     enabled = canStart,
@@ -352,7 +345,6 @@ private fun ProgramCardModern(
                 
                 Spacer(Modifier.width(4.dp))
                 
-                // Меню три точки
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Меню")
@@ -453,9 +445,6 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
     return listOf("Интервалы 4×3 мин" to intervals, "Пирамида (1-2-3-2-1)" to pyramid, "Горки 6×1 мин @ 6%" to hills, "Fartlek 20 мин" to fartlek)
 }
 
-// ==========================================
-// РЕДАКТОР (оставлен без изменений)
-// ==========================================
 private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
 
 @OptIn(ExperimentalMaterial3Api::class)
