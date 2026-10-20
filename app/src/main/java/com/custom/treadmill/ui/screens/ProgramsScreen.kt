@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack  // 👈 ДОБАВЛЕН ИМПОРТ
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.FileUpload
@@ -74,16 +73,10 @@ fun ProgramsScreen(
 
     fun tryImportText(text: String, source: String) {
         try {
-            if (text.isBlank()) {
-                mainVm.showMessage("Текст пуст"); return
-            }
+            if (text.isBlank()) { mainVm.showMessage("Текст пуст"); return }
             val data = programVm.importJson(text)
-            if (data.name.isBlank() || data.segments.isEmpty()) {
-                mainVm.showMessage("Ошибка: файл не содержит программы"); return
-            }
-            if (data.segments.any { it.durationSec <= 0 || it.speedKmh <= 0 }) {
-                mainVm.showMessage("Ошибка: найдены сегменты с нулевым временем или скоростью"); return
-            }
+            if (data.name.isBlank() || data.segments.isEmpty()) { mainVm.showMessage("Ошибка: файл не содержит программы"); return }
+            if (data.segments.any { it.durationSec <= 0 || it.speedKmh <= 0 }) { mainVm.showMessage("Ошибка: найдены сегменты с нулевым временем или скоростью"); return }
             programVm.save(data)
             mainVm.showMessage("Программа «${data.name}» импортирована ($source)")
         } catch (e: Exception) {
@@ -140,15 +133,12 @@ fun ProgramsScreen(
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            // Верхняя панель
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (onBack != null) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
-                    }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад") }
                 } else {
                     Spacer(Modifier.width(16.dp))
                 }
@@ -168,7 +158,6 @@ fun ProgramsScreen(
                 }
             }
 
-            // Поиск и сортировка
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -207,7 +196,6 @@ fun ProgramsScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Список
             if (visible.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -305,7 +293,6 @@ fun ProgramsScreen(
     }
 }
 
-// 🎨 СОВРЕМЕННАЯ РАСКРЫВАЮЩАЯСЯ КАРТОЧКА
 @Composable
 private fun ProgramCardModern(
     entity: ProgramEntity, data: ProgramData, canStart: Boolean,
@@ -476,7 +463,7 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
 }
 
 // ==========================================
-// 🚀 НОВЫЙ СУПЕР-КОМПАКТНЫЙ РЕДАКТОР
+// 🚀 КОМПАКТНЫЙ РЕДАКТОР БЕЗ ОБРЕЗКИ ТЕКСТА
 // ==========================================
 private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
 
@@ -535,25 +522,19 @@ private fun ProgramEditorScreen(
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
                     
-                    // Верхние поля (Название и Описание)
-                    OutlinedTextField(
+                    // Верхние поля через SlimTextField, чтобы они были тонкими и без обрезки
+                    SlimTextField(
                         value = name, 
                         onValueChange = { name = it }, 
-                        label = { Text("Название программы", fontSize = 12.sp) }, 
-                        singleLine = true, 
-                        textStyle = LocalTextStyle.current.copy(fontSize = 15.sp),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
+                        label = "Название программы", 
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
+                    Spacer(Modifier.height(6.dp))
+                    SlimTextField(
                         value = description, 
                         onValueChange = { description = it }, 
-                        label = { Text("Описание (опционально)", fontSize = 12.sp) }, 
-                        singleLine = true, 
-                        textStyle = LocalTextStyle.current.copy(fontSize = 15.sp),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
+                        label = "Описание (опционально)", 
+                        modifier = Modifier.fillMaxWidth()
                     )
                     
                     Spacer(Modifier.height(12.dp))
@@ -579,7 +560,54 @@ private fun ProgramEditorScreen(
     }
 }
 
-// 🚀 КОМПАКТНЫЙ ВВОД ЧИСЕЛ
+// 🚀 Кастомное поле без обрезки текста и лишних отступов
+@Composable
+private fun SlimTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        textStyle = LocalTextStyle.current.copy(
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            lineHeight = 16.sp
+        ),
+        singleLine = true,
+        modifier = modifier
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        decorationBox = { innerTextField ->
+            Column {
+                Text(
+                    text = label,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+                Box {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = "...",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        }
+    )
+}
+
+// 🚀 Компактный ввод чисел
 @Composable
 private fun CompactNumberField(
     value: String,
@@ -599,10 +627,10 @@ private fun CompactNumberField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         singleLine = true,
         modifier = modifier
-            .height(38.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 4.dp, vertical = 8.dp),
+            .height(36.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 2.dp),
         decorationBox = { innerTextField ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -630,7 +658,6 @@ private fun SegmentEditor(
 ) {
     var nameState by remember(seg) { mutableStateOf(seg.name) }
     
-    // Время: разделено на минуты и секунды
     var minState by remember(seg.durationSec) { mutableStateOf((seg.durationSec / 60).toString()) }
     var secState by remember(seg.durationSec) { mutableStateOf((seg.durationSec % 60).toString()) }
     fun updateTime() {
@@ -648,7 +675,7 @@ private fun SegmentEditor(
         shape = RoundedCornerShape(10.dp)
     ) {
         Column(Modifier.padding(10.dp)) {
-            // Шапка (Номер, Название, Кнопки)
+            // Шапка
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(22.dp)) {
                     Box(contentAlignment = Alignment.Center) {
@@ -656,24 +683,26 @@ private fun SegmentEditor(
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                OutlinedTextField(
+                
+                SlimTextField(
                     value = nameState,
                     onValueChange = { nameState = it; onChange(seg.copy(name = it)) },
-                    placeholder = { Text("Название сегмента", fontSize = 13.sp) },
-                    singleLine = true,
-                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    shape = RoundedCornerShape(8.dp)
+                    label = "Название сегмента",
+                    modifier = Modifier.weight(1f)
                 )
+
                 Spacer(Modifier.width(4.dp))
+                
                 Column {
-                    IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(22.dp)) { Icon(Icons.Default.ArrowUpward, null, modifier = Modifier.size(16.dp)) }
-                    IconButton(onClick = onMoveDown, enabled = index < total - 1, modifier = Modifier.size(22.dp)) { Icon(Icons.Default.ArrowDownward, null, modifier = Modifier.size(16.dp)) }
-                }
-                Column {
-                    IconButton(onClick = onDuplicate, modifier = Modifier.size(22.dp)) { Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp)) }
-                    IconButton(onClick = onDelete, enabled = canDelete, modifier = Modifier.size(22.dp)) {
-                        Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row {
+                        IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.ArrowUpward, null, modifier = Modifier.size(16.dp)) }
+                        IconButton(onClick = onMoveDown, enabled = index < total - 1, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.ArrowDownward, null, modifier = Modifier.size(16.dp)) }
+                    }
+                    Row {
+                        IconButton(onClick = onDuplicate, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp)) }
+                        IconButton(onClick = onDelete, enabled = canDelete, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
@@ -682,16 +711,16 @@ private fun SegmentEditor(
 
             // Время
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Время:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(50.dp))
+                Text("Время:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(65.dp))
                 CompactNumberField(value = minState, onValueChange = { minState = it; updateTime() }, suffix = "мин", modifier = Modifier.weight(1f))
                 CompactNumberField(value = secState, onValueChange = { secState = it; updateTime() }, suffix = "сек", modifier = Modifier.weight(1f))
             }
             
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
 
-            // Скорость (поле + ползунок)
+            // Скорость
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Скорость:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(60.dp))
+                Text("Скорость:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(65.dp), maxLines = 1, softWrap = false)
                 Slider(
                     value = seg.speedKmh.toFloat(),
                     onValueChange = { 
@@ -700,7 +729,7 @@ private fun SegmentEditor(
                         onChange(seg.copy(speedKmh = v)) 
                     },
                     valueRange = 0.5f..20f,
-                    modifier = Modifier.weight(1f).height(24.dp)
+                    modifier = Modifier.weight(1f).height(20.dp)
                 )
                 CompactNumberField(
                     value = speedState,
@@ -709,14 +738,16 @@ private fun SegmentEditor(
                         val v = it.replace(',', '.').toDoubleOrNull() ?: 0.0
                         onChange(seg.copy(speedKmh = v))
                     },
-                    suffix = "км/ч",
-                    modifier = Modifier.width(68.dp)
+                    suffix = "",
+                    modifier = Modifier.width(50.dp)
                 )
             }
 
-            // Наклон (поле + ползунок)
+            Spacer(Modifier.height(6.dp))
+
+            // Наклон
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Наклон:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(60.dp))
+                Text("Наклон:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(65.dp), maxLines = 1, softWrap = false)
                 Slider(
                     value = seg.inclinePercent.toFloat(),
                     onValueChange = { 
@@ -725,7 +756,7 @@ private fun SegmentEditor(
                         onChange(seg.copy(inclinePercent = v)) 
                     },
                     valueRange = 0f..15f,
-                    modifier = Modifier.weight(1f).height(24.dp)
+                    modifier = Modifier.weight(1f).height(20.dp)
                 )
                 CompactNumberField(
                     value = inclineState,
@@ -734,8 +765,8 @@ private fun SegmentEditor(
                         val v = it.replace(',', '.').toDoubleOrNull() ?: 0.0
                         onChange(seg.copy(inclinePercent = v))
                     },
-                    suffix = "%",
-                    modifier = Modifier.width(58.dp)
+                    suffix = "",
+                    modifier = Modifier.width(50.dp)
                 )
             }
         }
