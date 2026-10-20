@@ -163,9 +163,9 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             // Табы
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TabButton("Лог", tab == 0) { tab = 0 }
-                TabButton("Справочник", tab == 1) { tab = 1 }
-                TabButton("Конструктор", tab == 2) { tab = 2 }
+                TabButton("Лог", tab == 0, Modifier.weight(1f)) { tab = 0 }
+                TabButton("Справочник", tab == 1, Modifier.weight(1f)) { tab = 1 }
+                TabButton("Конструктор", tab == 2, Modifier.weight(1f)) { tab = 2 }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -198,11 +198,11 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun TabButton(text: String, selected: Boolean, onClick: () -> Unit) {
+private fun TabButton(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     if (selected) {
-        Button(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), modifier = Modifier.weight(1f)) { Text(text, fontSize = 13.sp) }
+        Button(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), modifier = modifier) { Text(text, fontSize = 13.sp) }
     } else {
-        OutlinedButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), modifier = Modifier.weight(1f)) { Text(text, fontSize = 13.sp) }
+        OutlinedButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), modifier = modifier) { Text(text, fontSize = 13.sp) }
     }
 }
 
