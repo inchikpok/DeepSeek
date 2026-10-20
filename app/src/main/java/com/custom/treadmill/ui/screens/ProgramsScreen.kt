@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -49,6 +50,7 @@ import com.custom.treadmill.data.database.ProgramSegment
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import com.custom.treadmill.ui.viewmodels.ProgramViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 enum class SortMode { NAME_ASC, NAME_DESC, NEWEST }
@@ -471,7 +473,7 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
 }
 
 // ==========================================
-// 🚀 РЕДАКТОР С ЦВЕТНЫМИ КНОПКАМИ
+// 🚀 РЕДАКТОР С АВТОПРОКРУТКОЙ
 // ==========================================
 private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
 
@@ -488,6 +490,10 @@ private fun ProgramEditorScreen(
     }
     var name by remember(initial) { mutableStateOf(initial.name) }
     var description by remember(initial) { mutableStateOf(initial.description) }
+
+    // Состояние для прокрутки и корутина
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -517,6 +523,7 @@ private fun ProgramEditorScreen(
                                 onClick = { 
                                     val last = segments.lastOrNull()
                                     segments.add(SegmentEdit("Сегмент ${segments.size + 1}", 60, last?.speedKmh ?: 5.0, last?.inclinePercent ?: 0.0)) 
+                                    scope.launch { listState.animateScrollToItem(segments.size - 1) }
                                 },
                                 modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(10.dp)
                             ) {
@@ -548,14 +555,37 @@ private fun ProgramEditorScreen(
                     Text("Сегменты", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(4.dp))
                     
-                    LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.weight(1f), 
+                        verticalArrangement = Arrangement.spacedBy(8.dp), 
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
                         itemsIndexed(segments) { index, seg ->
                             SegmentEditor(
                                 index = index, total = segments.size, seg = seg,
                                 onChange = { newSeg -> segments[index] = newSeg },
-                                onMoveUp = { if (index > 0) { val tmp = segments[index - 1]; segments[index - 1] = segments[index]; segments[index] = tmp } },
-                                onMoveDown = { if (index < segments.size - 1) { val tmp = segments[index + 1]; segments[index + 1] = segments[index]; segments[index] = tmp } },
-                                onDuplicate = { segments.add(index + 1, seg.copy(name = seg.name + " (копия)")) },
+                                onMoveUp = { 
+                                    if (index > 0) { 
+                                        val tmp = segments[index - 1]
+                                        segments[index - 1] = segments[index]
+                                        segments[index] = tmp
+                                        scope.launch { listState.animateScrollToItem(index - 1) }
+                                    } 
+                                },
+                                onMoveDown = { 
+                                    if (index < segments.size - 1) { 
+                                        val tmp = segments[index + 1]
+                                        segments[index + 1] = segments[index]
+                                        segments[index] = tmp
+                                        scope.launch { listState.animateScrollToItem(index + 1) }
+                                    } 
+                                },
+                                // Убрали слово "копия"
+                                onDuplicate = { 
+                                    segments.add(index + 1, seg)
+                                    scope.launch { listState.animateScrollToItem(index + 1) }
+                                },
                                 onDelete = { if (segments.size > 1) segments.removeAt(index) },
                                 canDelete = segments.size > 1
                             )
@@ -600,13 +630,12 @@ private fun SlimTextField(
     }
 }
 
-// 🚀 КНОПКА С ЦВЕТАМИ
 @Composable
 private fun HoldableStepButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit,
     enabled: Boolean = true,
-    isPlus: Boolean // Флаг для выбора цвета
+    isPlus: Boolean
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -622,10 +651,8 @@ private fun HoldableStepButton(
         }
     }
 
-    // Цвета для кнопок
-    val activeBgColor = if (isPlus) Color(0xFF4CAF50) else Color(0xFFE53935) // Зеленый / Красный
+    val activeBgColor = if (isPlus) Color(0xFF4CAF50) else Color(0xFFE53935)
     val disabledBgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    
     val iconTint = if (enabled) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
 
     Box(
@@ -718,7 +745,6 @@ private fun SegmentEditor(
     ) {
         Column(Modifier.padding(8.dp)) {
             
-            // Шапка сегмента (номер, название, кнопки)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(20.dp)) {
                     Box(contentAlignment = Alignment.Center) {
@@ -754,7 +780,6 @@ private fun SegmentEditor(
 
                 Spacer(Modifier.width(4.dp))
                 
-                // Кнопки управления (вверх/вниз/копировать/удалить)
                 Column {
                     Row {
                         IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(22.dp)) { Icon(Icons.Default.ArrowUpward, null, modifier = Modifier.size(14.dp)) }
@@ -773,7 +798,6 @@ private fun SegmentEditor(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
             Spacer(Modifier.height(6.dp))
 
-            // Время
             Row(Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Время", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -805,7 +829,6 @@ private fun SegmentEditor(
 
             Spacer(Modifier.height(2.dp))
 
-            // Скорость
             Row(Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Скорость", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -834,7 +857,6 @@ private fun SegmentEditor(
 
             Spacer(Modifier.height(2.dp))
 
-            // Наклон
             Row(Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Наклон", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
