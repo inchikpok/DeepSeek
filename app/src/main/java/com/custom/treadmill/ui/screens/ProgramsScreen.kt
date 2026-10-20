@@ -1,5 +1,7 @@
 package com.custom.treadmill.ui.screens
 
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -22,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.custom.treadmill.DebugLog
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.database.ProgramEntity
@@ -50,11 +53,36 @@ fun ProgramsScreen(
     var editingData by remember { mutableStateOf<ProgramData?>(null) }
     var exportTarget by remember { mutableStateOf<ProgramData?>(null) }
     var deleteTarget by remember { mutableStateOf<ProgramEntity?>(null) }
-    
+
     var showTemplates by remember { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var sortMode by rememberSaveable { mutableStateOf(SortMode.NAME_ASC) }
     var showNotConnectedDialog by remember { mutableStateOf(false) }
+
+    // Общая валидация и импорт — используется и файлом, и буфером
+    fun tryImportText(text: String, source: String) {
+        try {
+            if (text.isBlank()) {
+                mainVm.showMessage("Текст пуст")
+                return
+            }
+            val data = programVm.importJson(text)
+            if (data.name.isBlank() || data.segments.isEmpty()) {
+                mainVm.showMessage("Ошибка: файл не содержит программы")
+                return
+            }
+            if (data.segments.any { it.durationSec <= 0 || it.speedKmh <= 0 }) {
+                mainVm.showMessage("Ошибка: найдены сегменты с нулевым временем или скоростью")
+                return
+            }
+            programVm.save(data)
+            mainVm.showMessage("Программа «${data.name}» импортирована ($source)")
+            DebugLog.d("VM", "import program '${data.name}' from $source, ${data.segments.size} segments")
+        } catch (e: Exception) {
+            mainVm.showMessage("Ошибка: ${e.message}")
+            DebugLog.e("VM", "import failed from $source", e)
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -78,21 +106,7 @@ fun ProgramsScreen(
             val text = ctx.contentResolver.openInputStream(uri)
                 ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                 ?: return@rememberLauncherForActivityResult
-            
-            val data = programVm.importJson(text)
-            
-            // Валидация импортированной программы
-            if (data.name.isBlank() || data.segments.isEmpty()) {
-                mainVm.showMessage("Ошибка: файл не содержит программы")
-                return@rememberLauncherForActivityResult
-            }
-            if (data.segments.any { it.durationSec <= 0 || it.speedKmh <= 0 }) {
-                mainVm.showMessage("Ошибка: найдены сегменты с нулевым временем или скоростью")
-                return@rememberLauncherForActivityResult
-            }
-            
-            programVm.save(data)
-            mainVm.showMessage("Программа «${data.name}» импортирована")
+            tryImportText(text, "файл")
         } catch (e: Exception) {
             mainVm.showMessage("Ошибка чтения файла: ${e.message}")
         }
@@ -123,13 +137,40 @@ fun ProgramsScreen(
             }
             Spacer(Modifier.height(12.dp))
 
+            Button(
+                onClick = { showTemplates = true },
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(vertical = 12.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Создать")
+            }
+            Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { showTemplates = true }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 12.dp)) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Создать")
-                }
-                OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 12.dp)) { Text("Импорт") }
+                OutlinedButton(
+                    onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 10.dp)
+                ) { Text("Импорт из файла", fontSize = 12.sp) }
+                OutlinedButton(
+                    onClick = {
+                        try {
+                            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = cm.primaryClip
+                            if (clip == null || clip.itemCount == 0) {
+                                mainVm.showMessage("Буфер обмена пуст")
+                                return@OutlinedButton
+                            }
+                            val text = clip.getItemAt(0).coerceToText(ctx)?.toString() ?: ""
+                            tryImportText(text, "буфер")
+                        } catch (e: Exception) {
+                            mainVm.showMessage("Ошибка буфера: ${e.message}")
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 10.dp)
+                ) { Text("Из буфера", fontSize = 12.sp) }
             }
 
             Spacer(Modifier.height(10.dp))
@@ -166,7 +207,7 @@ fun ProgramsScreen(
                     Text(if (programs.isEmpty()) "У вас пока нет программ" else "Ничего не найдено", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        if (programs.isEmpty()) "Нажмите «Создать», чтобы добавить первую,\nили «Импорт», чтобы загрузить из JSON."
+                        if (programs.isEmpty()) "Нажмите «Создать», чтобы добавить первую,\nили «Из буфера», чтобы вставить из блокнота."
                         else "Попробуйте изменить поиск",
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center
                     )
@@ -185,11 +226,11 @@ fun ProgramsScreen(
                             val copy = data.copy(name = "${data.name} (копия)")
                             programVm.save(copy, 0L)
                         },
-                        onDelete = { 
+                        onDelete = {
                             if (workoutState.running && workoutState.programName == p.name) {
                                 mainVm.showMessage("Нельзя удалить запущенную программу")
                             } else {
-                                deleteTarget = p 
+                                deleteTarget = p
                             }
                         },
                         onExport = {
@@ -252,7 +293,7 @@ fun ProgramsScreen(
         ProgramEditorScreen(
             initial = data,
             isNew = isNew,
-            onShowMessage = { mainVm.showMessage(it) }, // Передаем метод для вывода ошибок
+            onShowMessage = { mainVm.showMessage(it) },
             onSave = { newData ->
                 programVm.save(newData, if (isNew) 0L else editingId)
                 editingData = null
@@ -406,10 +447,10 @@ private data class SegmentEdit(val name: String = "", val durationSec: Int = 60,
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProgramEditorScreen(
-    initial: ProgramData, 
-    isNew: Boolean, 
+    initial: ProgramData,
+    isNew: Boolean,
     onShowMessage: (String) -> Unit,
-    onSave: (ProgramData) -> Unit, 
+    onSave: (ProgramData) -> Unit,
     onDismiss: () -> Unit
 ) {
     val segments = remember(initial) {
@@ -437,7 +478,6 @@ private fun ProgramEditorScreen(
                         navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = "Закрыть") } },
                         actions = {
                             TextButton(onClick = {
-                                // Валидация перед сохранением
                                 if (name.isBlank()) {
                                     onShowMessage("Введите название программы")
                                     return@TextButton
@@ -516,7 +556,7 @@ private fun SegmentEditor(
             val mins = seg.durationSec / 60
             val secs = seg.durationSec % 60
             val timeText = if (seg.durationSec >= 60) "${mins}м ${secs}с" else "${secs}с"
-            
+
             CompactSlider(
                 label = "Длительность", valueText = timeText, value = seg.durationSec.toFloat(),
                 valueRange = 10f..3600f, steps = 358,
