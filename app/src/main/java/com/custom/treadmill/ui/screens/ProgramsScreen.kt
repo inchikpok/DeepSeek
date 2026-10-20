@@ -37,19 +37,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.ExperimentalTextApi
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -236,7 +230,7 @@ fun ProgramsScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp)
                 ) {
                     items(visible, key = { it.id }) { p ->
@@ -317,7 +311,6 @@ fun ProgramsScreen(
     }
 }
 
-@OptIn(ExperimentalTextApi::class)
 @Composable
 private fun WorkoutMiniChart(
     segments: List<ProgramSegment>,
@@ -325,75 +318,61 @@ private fun WorkoutMiniChart(
 ) {
     if (segments.isEmpty()) return
     val totalSec = segments.sumOf { it.durationSec }.coerceAtLeast(1)
+    val totalMin = (totalSec / 60).coerceAtLeast(1)
     val maxSpeed = segments.maxOfOrNull { it.speedKmh }?.coerceAtLeast(1.0) ?: 1.0
     val maxIncline = segments.maxOfOrNull { it.inclinePercent }?.coerceAtLeast(1.0) ?: 1.0
 
-    val textMeasurer = rememberTextMeasurer()
-    val textColor = MaterialTheme.colorScheme.onSurface
+    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    val textColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Canvas(modifier = modifier) {
         val w = size.width
-        val h = size.height
+        val axisHeight = 20.dp.toPx()
+        val chartHeight = size.height - axisHeight
+
         var currentX = 0f
-        val gap = 2f
-        val scaleMax = maxSpeed
+        val gap = 1.5f
 
         val path = Path()
         var first = true
+
+        val textPaint = android.graphics.Paint().apply {
+            color = textColor.toArgb()
+            textSize = 9.sp.toPx()
+            textAlign = android.graphics.Paint.Align.CENTER
+            isAntiAlias = true
+        }
 
         segments.forEach { seg ->
             val segW = (seg.durationSec.toFloat() / totalSec) * w
             val drawW = (segW - gap).coerceAtLeast(1f)
             
-            val speedH = (seg.speedKmh.toFloat() / scaleMax.toFloat()) * h * 0.7f
-            val inclineH = if (seg.inclinePercent <= 0.0) 4f else ((seg.inclinePercent.toFloat() / maxIncline.toFloat()) * h * 0.6f) + 4f
+            val speedH = (seg.speedKmh.toFloat() / maxSpeed.toFloat()) * chartHeight * 0.8f
+            val inclineH = (seg.inclinePercent.toFloat() / maxIncline.toFloat()) * chartHeight * 0.8f
 
-            // Градация цветов
-            val color = when {
-                seg.speedKmh >= 16.0 -> Color(0xFFD32F2F) // Темно-красный
-                seg.speedKmh >= 12.0 -> Color(0xFFE53935) // Красный
-                seg.speedKmh >= 8.0 -> Color(0xFFFF9800)  // Оранжевый
-                seg.speedKmh >= 6.0 -> Color(0xFF4CAF50)  // Зеленый
-                else -> Color(0xFF2196F3)                 // Синий
-            }
+            // Цвет столбика скорости
+            val color = if (seg.speedKmh > 8.0) Color(0xFFE53935) else Color(0xFF26A69A)
             
             drawRoundRect(
                 color = color,
-                topLeft = Offset(currentX + gap/2, h - speedH),
+                topLeft = Offset(currentX + gap/2, chartHeight - speedH),
                 size = Size(drawW, speedH),
-                cornerRadius = CornerRadius(3f, 3f)
+                cornerRadius = CornerRadius(2f, 2f)
             )
-            
-            // Текст скорости над столбиком
-            val speedText = if (seg.speedKmh % 1.0 == 0.0) "%.0f".format(seg.speedKmh) else "%.1f".format(seg.speedKmh)
-            val textLayoutResult = textMeasurer.measure(
-                AnnotatedString(speedText),
-                style = TextStyle(color = textColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            )
-            if (segW > textLayoutResult.size.width + 4f) {
-                drawText(
-                    textLayoutResult = textLayoutResult,
-                    topLeft = Offset(currentX + (segW - textLayoutResult.size.width)/2, h - speedH - textLayoutResult.size.height - 2f)
-                )
-            }
-            
-            // Текст длительности внутри столбика
-            val min = seg.durationSec / 60
-            val sec = seg.durationSec % 60
-            val durText = if (min > 0) "${min}м" else "${sec}с"
-            val durLayout = textMeasurer.measure(
-                AnnotatedString(durText),
-                style = TextStyle(color = Color.White.copy(alpha = 0.9f), fontSize = 9.sp)
-            )
-            if (segW > durLayout.size.width + 4f) {
-                drawText(
-                    textLayoutResult = durLayout,
-                    topLeft = Offset(currentX + (segW - durLayout.size.width)/2, h - durLayout.size.height - 4f)
+
+            // Текст скорости (только если сегмент достаточно широкий)
+            if (drawW > 20.dp.toPx()) {
+                drawContext.canvas.nativeCanvas.drawText(
+                    "%.1f".format(seg.speedKmh).replace(".0", ""),
+                    currentX + segW / 2,
+                    chartHeight - speedH - 2.dp.toPx(),
+                    textPaint
                 )
             }
 
+            // Точки для линии наклона
             val centerX = currentX + segW / 2
-            val inclineY = h - inclineH
+            val inclineY = chartHeight - inclineH
             if (first) {
                 path.moveTo(centerX, inclineY)
                 first = false
@@ -404,21 +383,37 @@ private fun WorkoutMiniChart(
             currentX += segW
         }
 
-        // Пунктирная базовая линия наклона (0%)
-        drawLine(
-            color = Color(0xFFFFD54F).copy(alpha = 0.3f),
-            start = Offset(0f, h - 4f),
-            end = Offset(w, h - 4f),
-            strokeWidth = 1f,
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-        )
-
-        // Линия наклона
+        // Рисуем линию наклона
         drawPath(
             path = path,
-            color = Color(0xFFFFD54F),
-            style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            color = Color(0xFFFFB300),
+            style = Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
+
+        // Ось времени
+        drawLine(axisColor, start = Offset(0f, chartHeight), end = Offset(w, chartHeight), strokeWidth = 1.dp.toPx())
+
+        val stepMins = when {
+            totalMin <= 15 -> 5
+            totalMin <= 30 -> 10
+            totalMin <= 60 -> 15
+            else -> 30
+        }
+
+        var currentMin = 0
+        while (currentMin <= totalMin) {
+            val x = (currentMin.toFloat() / totalMin) * w
+            val drawX = x.coerceAtMost(w - 8.dp.toPx())
+            
+            drawLine(axisColor, start = Offset(drawX, chartHeight), end = Offset(drawX, chartHeight - 3.dp.toPx()), strokeWidth = 1.dp.toPx())
+            drawContext.canvas.nativeCanvas.drawText(
+                "$currentMin",
+                drawX,
+                size.height - 2.dp.toPx(),
+                textPaint
+            )
+            currentMin += stepMins
+        }
     }
 }
 
@@ -436,48 +431,32 @@ private fun ProgramCardModern(
 
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
     ) {
-        Column(Modifier.fillMaxWidth()) {
-            // Заголовок и описание
-            Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(Modifier.weight(1f).clickable { expanded = !expanded }) {
-                    Text(
-                        entity.name, 
-                        fontWeight = FontWeight.ExtraBold, 
-                        fontSize = 18.sp, 
-                        maxLines = 2, 
-                        overflow = TextOverflow.Ellipsis, 
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            
+            // Шапка с названием и кнопками
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text(entity.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                     if (entity.description.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            entity.description, 
-                            fontSize = 14.sp, 
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), 
-                            maxLines = 2, 
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Text(entity.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
+                Spacer(Modifier.width(8.dp))
                 
                 FilledIconButton(
                     onClick = onStart,
                     enabled = canStart,
-                    modifier = Modifier.size(40.dp).padding(start = 4.dp),
+                    modifier = Modifier.size(36.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Старт")
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Старт", modifier = Modifier.size(20.dp))
                 }
                 
                 Box {
-                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(40.dp)) {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Меню")
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
@@ -489,48 +468,76 @@ private fun ProgramCardModern(
                     }
                 }
             }
-            
+
+            Spacer(Modifier.height(12.dp))
+
             // График
             WorkoutMiniChart(
                 segments = data.segments,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(100.dp)
-                    .padding(horizontal = 16.dp)
+                    .height(80.dp)
             )
-            
-            // Статистика
+
+            Spacer(Modifier.height(12.dp))
+
+            // Нижняя часть шапки (Чипсы и кнопка развернуть)
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 StatChip("${data.segments.size} сегм.")
+                Spacer(Modifier.width(6.dp))
                 StatChip(durationText)
+                
                 Spacer(Modifier.weight(1f))
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = "Развернуть",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            // Развернутый список
+            // Развернутый список сегментов
             AnimatedVisibility(visible = expanded) {
-                Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
                     HorizontalDivider(Modifier.padding(bottom = 8.dp))
                     data.segments.forEachIndexed { i, seg ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            Modifier.fillMaxWidth().padding(vertical = 6.dp)
                         ) {
-                            Text("${i + 1}.", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(24.dp))
-                            Text(seg.name.ifBlank { "Сегмент" }, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
-                            val m = seg.durationSec / 60
-                            val s = seg.durationSec % 60
-                            val timeStr = if (m > 0) "${m}м ${s}с" else "${s}с"
-                            Text("$timeStr · %.1f км/ч · %.0f%%".format(seg.speedKmh, seg.inclinePercent), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(
+                                    "${i + 1}.", 
+                                    fontSize = 13.sp, 
+                                    fontWeight = FontWeight.Bold, 
+                                    color = MaterialTheme.colorScheme.primary, 
+                                    modifier = Modifier.width(24.dp)
+                                )
+                                Text(
+                                    seg.name.ifBlank { "Сегмент ${i + 1}" }, 
+                                    fontSize = 14.sp, 
+                                    modifier = Modifier.weight(1f), 
+                                    maxLines = 2, 
+                                    overflow = TextOverflow.Ellipsis, 
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(Modifier.height(2.dp))
+                            Row(Modifier.padding(start = 24.dp)) {
+                                val m = seg.durationSec / 60
+                                val s = seg.durationSec % 60
+                                val timeStr = if (m > 0) "${m}м ${s}с" else "${s}с"
+                                Text(
+                                    "$timeStr · %.1f км/ч · %.0f%%".format(seg.speedKmh, seg.inclinePercent), 
+                                    fontSize = 12.sp, 
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, 
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                            }
+                        }
+                        if (i < data.segments.size - 1) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
                         }
                     }
                 }
@@ -541,8 +548,8 @@ private fun ProgramCardModern(
 
 @Composable
 private fun StatChip(text: String) {
-    Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f), shape = RoundedCornerShape(6.dp)) {
-        Text(text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
+    Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), shape = RoundedCornerShape(6.dp)) {
+        Text(text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium)
     }
 }
 
