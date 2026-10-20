@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,8 +32,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -304,6 +311,66 @@ fun ProgramsScreen(
 }
 
 @Composable
+private fun WorkoutMiniChart(
+    segments: List<ProgramSegment>,
+    modifier: Modifier = Modifier
+) {
+    if (segments.isEmpty()) return
+    val totalSec = segments.sumOf { it.durationSec }.coerceAtLeast(1)
+    val maxSpeed = segments.maxOfOrNull { it.speedKmh }?.coerceAtLeast(1.0) ?: 1.0
+    val maxIncline = segments.maxOfOrNull { it.inclinePercent }?.coerceAtLeast(1.0) ?: 1.0
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        var currentX = 0f
+        val gap = 1.5f
+
+        val path = Path()
+        var first = true
+
+        // Рисуем столбики скорости
+        segments.forEach { seg ->
+            val segW = (seg.durationSec.toFloat() / totalSec) * w
+            val drawW = (segW - gap).coerceAtLeast(1f)
+            
+            // Оставляем 20% высоты сверху для линии наклона
+            val speedH = (seg.speedKmh.toFloat() / maxSpeed.toFloat()) * h * 0.8f
+            val inclineH = (seg.inclinePercent.toFloat() / maxIncline.toFloat()) * h * 0.8f
+
+            // Цвет столбика: красный если быстрее 8 км/ч, иначе зеленый
+            val color = if (seg.speedKmh > 8.0) Color(0xFFE53935) else Color(0xFF26A69A)
+            
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(currentX + gap/2, h - speedH),
+                size = Size(drawW, speedH),
+                cornerRadius = CornerRadius(1f, 1f)
+            )
+
+            // Точки для линии наклона
+            val centerX = currentX + segW / 2
+            val inclineY = h - inclineH
+            if (first) {
+                path.moveTo(centerX, inclineY)
+                first = false
+            } else {
+                path.lineTo(centerX, inclineY)
+            }
+
+            currentX += segW
+        }
+
+        // Рисуем оранжевую линию наклона
+        drawPath(
+            path = path,
+            color = Color(0xFFFFB300),
+            style = Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+    }
+}
+
+@Composable
 private fun ProgramCardModern(
     entity: ProgramEntity, data: ProgramData, canStart: Boolean,
     onEdit: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit, onExport: () -> Unit, onStart: () -> Unit
@@ -336,12 +403,21 @@ private fun ProgramCardModern(
                         StatChip(durationText)
                     }
                 }
+
+                // Мини-график
+                WorkoutMiniChart(
+                    segments = data.segments,
+                    modifier = Modifier
+                        .width(60.dp)
+                        .height(34.dp)
+                        .padding(horizontal = 6.dp)
+                )
                 
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = "Развернуть",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp)
+                    modifier = Modifier.padding(horizontal = 4.dp)
                 )
 
                 FilledIconButton(
@@ -472,9 +548,6 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
     return listOf("Интервалы 4×3 мин" to intervals, "Пирамида (1-2-3-2-1)" to pyramid, "Горки 6×1 мин @ 6%" to hills, "Fartlek 20 мин" to fartlek)
 }
 
-// ==========================================
-// 🚀 РЕДАКТОР С АВТОПРОКРУТКОЙ
-// ==========================================
 private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -491,7 +564,6 @@ private fun ProgramEditorScreen(
     var name by remember(initial) { mutableStateOf(initial.name) }
     var description by remember(initial) { mutableStateOf(initial.description) }
 
-    // Состояние для прокрутки и корутина
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -581,7 +653,6 @@ private fun ProgramEditorScreen(
                                         scope.launch { listState.animateScrollToItem(index + 1) }
                                     } 
                                 },
-                                // Убрали слово "копия"
                                 onDuplicate = { 
                                     segments.add(index + 1, seg)
                                     scope.launch { listState.animateScrollToItem(index + 1) }
