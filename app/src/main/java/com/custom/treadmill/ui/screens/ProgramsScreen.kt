@@ -18,7 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack // 🚀 ДОБАВЛЕН ИМПОРТ
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.FileUpload
@@ -464,7 +464,7 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
 }
 
 // ==========================================
-// 🚀 КОМПАКТНЫЙ РЕДАКТОР БЕЗ ОБРЕЗКИ ТЕКСТА
+// 🚀 ИСПРАВЛЕННЫЙ РЕДАКТОР
 // ==========================================
 private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
 
@@ -567,43 +567,29 @@ private fun SlimTextField(
     label: String,
     modifier: Modifier = Modifier
 ) {
-    BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
-        textStyle = LocalTextStyle.current.copy(
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurface,
-            lineHeight = 16.sp
-        ),
-        singleLine = true,
-        modifier = modifier
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(8.dp)
-            )
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        decorationBox = { innerTextField ->
-            Column {
-                Text(
-                    text = label,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
-                Box {
-                    if (value.isEmpty()) {
-                        Text(
-                            text = "...",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
-                    }
+    Column(modifier = modifier) {
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            textStyle = LocalTextStyle.current.copy(
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(42.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            decorationBox = { innerTextField ->
+                Box(contentAlignment = Alignment.CenterStart, modifier = Modifier.fillMaxSize()) {
                     innerTextField()
                 }
             }
-        }
-    )
+        )
+    }
 }
 
 @Composable
@@ -611,6 +597,7 @@ private fun CompactNumberField(
     value: String,
     onValueChange: (String) -> Unit,
     suffix: String = "",
+    keyboardType: KeyboardType = KeyboardType.Number,
     modifier: Modifier = Modifier
 ) {
     BasicTextField(
@@ -622,27 +609,25 @@ private fun CompactNumberField(
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Medium
         ),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         singleLine = true,
         modifier = modifier
-            .height(36.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 2.dp),
+            .height(42.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
         decorationBox = { innerTextField ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     if (value.isEmpty()) {
                         Text("0", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f), fontSize = 14.sp)
                     }
                     innerTextField()
                 }
                 if (suffix.isNotEmpty()) {
-                    Text(suffix, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp))
+                    Text(suffix, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -681,11 +666,25 @@ private fun SegmentEditor(
                 }
                 Spacer(Modifier.width(8.dp))
                 
-                SlimTextField(
+                BasicTextField(
                     value = nameState,
                     onValueChange = { nameState = it; onChange(seg.copy(name = it)) },
-                    label = "Название сегмента",
-                    modifier = Modifier.weight(1f)
+                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp),
+                    decorationBox = { innerTextField ->
+                        Box(contentAlignment = Alignment.CenterStart, modifier = Modifier.fillMaxSize()) {
+                            if (nameState.isEmpty()) {
+                                Text("Название сегмента", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontSize = 14.sp)
+                            }
+                            innerTextField()
+                        }
+                    }
                 )
 
                 Spacer(Modifier.width(4.dp))
@@ -734,7 +733,8 @@ private fun SegmentEditor(
                         onChange(seg.copy(speedKmh = v))
                     },
                     suffix = "",
-                    modifier = Modifier.width(50.dp)
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.width(55.dp)
                 )
             }
 
@@ -760,7 +760,8 @@ private fun SegmentEditor(
                         onChange(seg.copy(inclinePercent = v))
                     },
                     suffix = "",
-                    modifier = Modifier.width(50.dp)
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.width(55.dp)
                 )
             }
         }
