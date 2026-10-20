@@ -57,7 +57,6 @@ fun AppNavHost() {
     val mainVm: MainViewModel = viewModel()
     val programVm: ProgramViewModel = viewModel()
 
-    // [DEBUGLOG] Логируем навигацию между полноэкранными экранами
     LaunchedEffect(nav) {
         nav.addOnDestinationChangedListener { _, destination, arguments ->
             val route = destination.route ?: "unknown"
@@ -117,9 +116,9 @@ private fun MainTabs(
                     NavigationBarItem(
                         selected = pagerState.currentPage == index,
                         onClick = {
-                            // [DEBUGLOG] Явно логируем таб-нажатие (в дополнение к UI-тапу)
                             DebugLog.d("NAV", "tab tap: ${tab.title}")
-                            scope.launch { pagerState.animateScrollToPage(index) }
+                            // 🚀 ИСПОЛЬЗУЕМ scrollToPage ВМЕСТО animateScrollToPage (мгновенный переход)
+                            scope.launch { pagerState.scrollToPage(index) }
                         },
                         icon = { Icon(tab.icon, contentDescription = tab.title) },
                         label = { Text(tab.title, fontSize = 11.sp) }
@@ -146,9 +145,9 @@ private fun MainTabs(
                     vm = mainVm,
                     onNavigate = { route ->
                         when (route) {
-                            Routes.PROGRAMS -> scope.launch { pagerState.animateScrollToPage(1) }
-                            Routes.HISTORY  -> scope.launch { pagerState.animateScrollToPage(2) }
-                            Routes.SETTINGS -> scope.launch { pagerState.animateScrollToPage(3) }
+                            Routes.PROGRAMS -> scope.launch { pagerState.scrollToPage(1) }
+                            Routes.HISTORY  -> scope.launch { pagerState.scrollToPage(2) }
+                            Routes.SETTINGS -> scope.launch { pagerState.scrollToPage(3) }
                             Routes.WORKOUT  -> onOpenWorkout()
                             Routes.DEBUG    -> onOpenDebug()
                             Routes.ABOUT    -> onOpenAbout()
