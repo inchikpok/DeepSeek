@@ -21,7 +21,8 @@ data class WorkoutState(
     val totalSegments: Int = 0,
     val currentSegmentName: String = "",
     val segmentElapsedSec: Int = 0,
-    val segmentDurationSec: Int = 0
+    val segmentDurationSec: Int = 0,
+    val progressPercent: Int = 0 // [НОВОЕ] Прогресс в %
 )
 
 class WorkoutManager {
@@ -62,7 +63,8 @@ class WorkoutManager {
             segmentElapsedSec = 0,
             totalElapsedSec = 0,
             segmentDurationSec = program.segments.firstOrNull()?.durationSec ?: 0,
-            currentSegmentName = program.segments.firstOrNull()?.name.orEmpty()
+            currentSegmentName = program.segments.firstOrNull()?.name.orEmpty(),
+            progressPercent = 0
         )
         launchLoop()
     }
@@ -98,23 +100,26 @@ class WorkoutManager {
         if (nextIndex >= program.segments.size) {
             job?.cancel()
             job = null
-            _state.value = s.copy(running = false, paused = false, finished = true)
+            _state.value = s.copy(running = false, paused = false, finished = true, progressPercent = 100)
             scopeRef?.launch { onFinishRef?.invoke() }
             return
         }
 
-        // [ФИКС 1] Не накручиваем непробежанное время.
         val next = program.segments[nextIndex]
 
         job?.cancel()
         job = null
+
+        // Считаем прогресс по индексу сегмента
+        val newProgress = ((nextIndex.toFloat() / program.segments.size) * 100).toInt()
 
         _state.value = s.copy(
             currentSegmentIndex = nextIndex,
             currentSegmentName = next.name.ifBlank { "Сегмент ${nextIndex + 1}" },
             segmentDurationSec = next.durationSec,
             segmentElapsedSec = 0,
-            totalElapsedSec = s.totalElapsedSec
+            totalElapsedSec = s.totalElapsedSec,
+            progressPercent = newProgress
         )
 
         launchLoop()
@@ -156,11 +161,13 @@ class WorkoutManager {
                 if (_state.value.segmentElapsedSec == 0) {
                     onSetSpeed(seg.speedKmh)
                     onSetIncline(seg.inclinePercent)
+                    val newProgress = ((index.toFloat() / segments.size) * 100).toInt()
                     _state.value = _state.value.copy(
                         currentSegmentIndex = index,
                         currentSegmentName = seg.name.ifBlank { "Сегмент ${index + 1}" },
                         segmentDurationSec = seg.durationSec,
-                        segmentElapsedSec = 0
+                        segmentElapsedSec = 0,
+                        progressPercent = newProgress
                     )
                 }
 
@@ -169,7 +176,15 @@ class WorkoutManager {
                     delay(1000L)
                     s++
                     totalElapsed++
-                    _state.value = _state.value.copy(segmentElapsedSec = s, totalElapsedSec = totalElapsed)
+                    
+                    // Прогресс: (пройденные сегменты + доля текущего) / всего
+                    val currentProgress = ((index + (s.toFloat() / seg.durationSec.toFloat())) / segments.size * 100).toInt()
+                    
+                    _state.value = _state.value.copy(
+                        segmentElapsedSec = s, 
+                        totalElapsedSec = totalElapsed,
+                        progressPercent = currentProgress
+                    )
                 }
 
                 if (s >= seg.durationSec) {
@@ -181,7 +196,7 @@ class WorkoutManager {
             }
 
             if (isActive) {
-                _state.value = _state.value.copy(running = false, paused = false, finished = true)
+                _state.value = _state.value.copy(running = false, paused = false, finished = true, progressPercent = 100)
                 onFinish()
             }
         }
