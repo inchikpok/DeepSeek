@@ -41,7 +41,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.nativeCanvas // <--- ВОТ ЭТА СТРОЧКА БЫЛА ПРОПУЩЕНА
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +60,7 @@ import com.custom.treadmill.ui.viewmodels.MainViewModel
 import com.custom.treadmill.ui.viewmodels.ProgramViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 enum class SortMode { NAME_ASC, NAME_DESC, NEWEST }
@@ -312,6 +313,9 @@ fun ProgramsScreen(
     }
 }
 
+// ==========================================================
+//  ОБНОВЛЕННЫЙ ГРАФИК (Скорость цветом, Наклон заливкой)
+// ==========================================================
 @Composable
 private fun WorkoutMiniChart(
     segments: List<ProgramSegment>,
@@ -319,22 +323,21 @@ private fun WorkoutMiniChart(
 ) {
     if (segments.isEmpty()) return
     val totalSec = segments.sumOf { it.durationSec }.coerceAtLeast(1)
-    val totalMin = (totalSec / 60).coerceAtLeast(1)
     val maxSpeed = segments.maxOfOrNull { it.speedKmh }?.coerceAtLeast(1.0) ?: 1.0
     val maxIncline = segments.maxOfOrNull { it.inclinePercent }?.coerceAtLeast(1.0) ?: 1.0
 
-    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Canvas(modifier = modifier) {
         val w = size.width
-        val axisHeight = 20.dp.toPx()
-        val chartHeight = size.height - axisHeight
+        val axisHeight = 18.dp.toPx()
+        val chartH = size.height - axisHeight
 
         var currentX = 0f
         val gap = 1.5f
 
-        val path = Path()
+        val inclinePath = Path()
         var first = true
 
         val textPaint = android.graphics.Paint().apply {
@@ -344,76 +347,114 @@ private fun WorkoutMiniChart(
             isAntiAlias = true
         }
 
+        // 1. Рисуем столбики скорости
         segments.forEach { seg ->
             val segW = (seg.durationSec.toFloat() / totalSec) * w
             val drawW = (segW - gap).coerceAtLeast(1f)
             
-            val speedH = (seg.speedKmh.toFloat() / maxSpeed.toFloat()) * chartHeight * 0.8f
-            val inclineH = (seg.inclinePercent.toFloat() / maxIncline.toFloat()) * chartHeight * 0.8f
+            val speedH = (seg.speedKmh.toFloat() / maxSpeed.toFloat()) * chartH * 0.9f
 
-            // Цвет столбика скорости
-            val color = if (seg.speedKmh > 8.0) Color(0xFFE53935) else Color(0xFF26A69A)
+            val color = when {
+                seg.speedKmh < 6.0 -> Color(0xFF29B6F6)  // Голубой (Ходьба)
+                seg.speedKmh < 9.0 -> Color(0xFF66BB6A)  // Зелёный (Лёгкий бег)
+                seg.speedKmh < 12.0 -> Color(0xFFFFCA28) // Жёлтый (Темповый)
+                seg.speedKmh < 15.0 -> Color(0xFFFF7043) // Оранжевый (Быстрый)
+                else -> Color(0xFFE53935)                // Красный (Спринт)
+            }
             
             drawRoundRect(
                 color = color,
-                topLeft = Offset(currentX + gap/2, chartHeight - speedH),
+                topLeft = Offset(currentX + gap/2, chartH - speedH),
                 size = Size(drawW, speedH),
                 cornerRadius = CornerRadius(2f, 2f)
             )
-
-            // Текст скорости (только если сегмент достаточно широкий)
-            if (drawW > 20.dp.toPx()) {
-                drawContext.canvas.nativeCanvas.drawText(
-                    "%.1f".format(seg.speedKmh).replace(".0", ""),
-                    currentX + segW / 2,
-                    chartHeight - speedH - 2.dp.toPx(),
-                    textPaint
-                )
-            }
-
-            // Точки для линии наклона
-            val centerX = currentX + segW / 2
-            val inclineY = chartHeight - inclineH
-            if (first) {
-                path.moveTo(centerX, inclineY)
-                first = false
-            } else {
-                path.lineTo(centerX, inclineY)
-            }
-
             currentX += segW
         }
 
-        // Рисуем линию наклона
+        // 2. Рисуем заливку для наклона (поверх столбиков, но полупрозрачно)
+        currentX = 0f
+        val inclineFillPath = Path()
+        
+        segments.forEach { seg ->
+            val segW = (seg.durationSec.toFloat() / totalSec) * w
+            val inclineH = (seg.inclinePercent.toFloat() / maxIncline.toFloat()) * chartH * 0.9f
+            val y = chartH - inclineH
+
+            // Начинаем путь от нижнего левого угла
+            if (first) {
+                inclinePath.moveTo(0f, chartH)
+                inclinePath.lineTo(0f, y)
+                inclineFillPath.moveTo(0f, chartH)
+                inclineFillPath.lineTo(0f, y)
+                first = false
+            }
+            
+            // Рисуем плоскую линию для сегмента (наклон постоянен)
+            inclinePath.lineTo(currentX + segW, y)
+            inclineFillPath.lineTo(currentX + segW, y)
+
+            currentX += segW
+        }
+        
+        // Закрываем путь заливки внизу
+        inclineFillPath.lineTo(w, chartH)
+        inclineFillPath.close()
+
+        // Рисуем фиолетовую полупрозрачную заливку
         drawPath(
-            path = path,
-            color = Color(0xFFFFB300),
+            path = inclineFillPath,
+            color = Color(0xFFAB47BC).copy(alpha = 0.25f)
+        )
+        
+        // Рисуем контур наклона
+        drawPath(
+            path = inclinePath,
+            color = Color(0xFFAB47BC),
             style = Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
 
-        // Ось времени
-        drawLine(axisColor, start = Offset(0f, chartHeight), end = Offset(w, chartHeight), strokeWidth = 1.dp.toPx())
+        // 3. Ось времени
+        drawLine(axisColor, start = Offset(0f, chartH), end = Offset(w, chartH), strokeWidth = 1.dp.toPx())
 
-        val stepMins = when {
-            totalMin <= 15 -> 5
-            totalMin <= 30 -> 10
-            totalMin <= 60 -> 15
-            else -> 30
+        val totalMin = totalSec / 60f
+        val stepMin = when {
+            totalMin <= 5f -> 1f
+            totalMin <= 12f -> 2f
+            totalMin <= 25f -> 5f
+            totalMin <= 60f -> 10f
+            totalMin <= 120f -> 15f
+            else -> 30f
         }
 
-        var currentMin = 0
-        while (currentMin <= totalMin) {
-            val x = (currentMin.toFloat() / totalMin) * w
-            val drawX = x.coerceAtMost(w - 8.dp.toPx())
+        // Рассчитываем количество делений
+        val numSteps = ceil((totalMin / stepMin).toDouble()).toInt()
+        for (i in 0..numSteps) {
+            val m = i * stepMin
+            if (m > totalMin) break
+
+            val x = (m / totalMin) * w
             
-            drawLine(axisColor, start = Offset(drawX, chartHeight), end = Offset(drawX, chartHeight - 3.dp.toPx()), strokeWidth = 1.dp.toPx())
+            // Небольшая корректировка для последней точки, чтобы текст не вылезал за границы
+            val textX = when {
+                i == 0 -> x + 4.dp.toPx() // Первую чуть правее
+                m >= totalMin -> x - 4.dp.toPx() // Последнюю чуть левее
+                else -> x
+            }
+
+            drawLine(axisColor, start = Offset(x, chartH), end = Offset(x, chartH - 3.dp.toPx()), strokeWidth = 1.dp.toPx())
+            
+            // Округляем и форматируем (если больше 60 мин - переводим в часы)
+            val label = when {
+                m < 60 -> "${m.toInt()}"
+                else -> "${(m / 60).toInt()}ч"
+            }
+
             drawContext.canvas.nativeCanvas.drawText(
-                "$currentMin",
-                drawX,
+                label,
+                textX,
                 size.height - 2.dp.toPx(),
                 textPaint
             )
-            currentMin += stepMins
         }
     }
 }
