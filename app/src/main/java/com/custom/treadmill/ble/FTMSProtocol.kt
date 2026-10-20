@@ -40,6 +40,8 @@ class FTMSProtocol : ITreadmillProtocol {
 
     @Volatile private var lastRequestedSpeed = 0.0
     @Volatile private var lastSpeedSentAt = 0L
+    @Volatile private var lastRequestedIncline = 0.0
+    @Volatile private var lastInclineSentAt = 0L
 
     private var retryJob: Job? = null
 
@@ -73,6 +75,8 @@ class FTMSProtocol : ITreadmillProtocol {
 
         lastRequestedSpeed = 0.0
         lastSpeedSentAt = 0L
+        lastRequestedIncline = 0.0
+        lastInclineSentAt = 0L
 
         delay(300)
         requestControl()
@@ -88,6 +92,7 @@ class FTMSProtocol : ITreadmillProtocol {
                 delay(2500L)
                 val now = System.currentTimeMillis()
                 val beltSpeed = _data.value.speedKmh
+                val beltIncline = _data.value.inclinePercent
 
                 val speedTarget = lastRequestedSpeed
                 if (beltSpeed >= 0.5 && speedTarget >= 0.5 && now - lastSpeedSentAt >= 5000L) {
@@ -97,8 +102,23 @@ class FTMSProtocol : ITreadmillProtocol {
                         log("retry speed $speedTarget (belt at $beltSpeed)")
                     }
                 }
+
+                val inclineTarget = lastRequestedIncline
+                if (beltSpeed >= 0.5 && now - lastInclineSentAt >= 5000L) {
+                    if (abs(beltIncline - inclineTarget) >= 0.5) {
+                        sendInclineRaw(inclineTarget)
+                        lastInclineSentAt = now
+                        log("retry incline $inclineTarget (belt at $beltIncline)")
+                    }
+                }
             }
         }
+    }
+
+    fun shutdown() {
+        retryJob?.cancel()
+        retryJob = null
+        scope.cancel()
     }
 
     private fun applySpeedResolution(v: Double): Double {
@@ -114,7 +134,8 @@ class FTMSProtocol : ITreadmillProtocol {
         val c = conn ?: return
         val raw = (speedKmh * 100.0).roundToInt().coerceIn(0, 65535)
         sendMutex.withLock {
-            c.write(uuid, byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
+            val ok = c.writeSuspend(uuid, byteArrayOf(0x02, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
+            if (!ok) log("speed write FAILED: $speedKmh")
         }
     }
 
@@ -123,13 +144,17 @@ class FTMSProtocol : ITreadmillProtocol {
         val c = conn ?: return
         val raw = (percent * 10.0).roundToInt().coerceIn(0, 32767)
         sendMutex.withLock {
-            c.write(uuid, byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
+            val ok = c.writeSuspend(uuid, byteArrayOf(0x03, (raw and 0xFF).toByte(), ((raw shr 8) and 0xFF).toByte()), true)
+            if (!ok) log("incline write FAILED: $percent")
         }
     }
 
     override suspend fun requestControl(): Boolean {
         val uuid = controlPointUuid ?: return false
-        return conn?.write(uuid, byteArrayOf(0x00), true) ?: false
+        val c = conn ?: return false
+        return sendMutex.withLock {
+            c.writeSuspend(uuid, byteArrayOf(0x00), true)
+        }
     }
 
     override suspend fun start(): Boolean {
@@ -137,10 +162,10 @@ class FTMSProtocol : ITreadmillProtocol {
         val c = conn ?: return false
 
         sendMutex.withLock {
-            c.write(uuid, byteArrayOf(0x00), true)
+            c.writeSuspend(uuid, byteArrayOf(0x00), true)
             delay(startPreCommandDelayMs)
             if (sendStartCommand) {
-                c.write(uuid, byteArrayOf(0x07), true)
+                c.writeSuspend(uuid, byteArrayOf(0x07), true)
             }
         }
         log("старт (00+07)")
@@ -150,14 +175,16 @@ class FTMSProtocol : ITreadmillProtocol {
     suspend fun ping07() {
         val uuid = controlPointUuid ?: return
         if (!sendStartCommand) return
+        val c = conn ?: return
         sendMutex.withLock {
-            conn?.write(uuid, byteArrayOf(0x07), true)
+            c.writeSuspend(uuid, byteArrayOf(0x07), true)
         }
         Log.d("FTMS", "-> 07 (ping)")
     }
 
     override suspend fun stop(): Boolean {
         val uuid = controlPointUuid ?: return false
+        val c = conn ?: return false
         lastRequestedSpeed = 0.0
 
         val alreadyStopped = _data.value.speedKmh < 0.1
@@ -167,7 +194,7 @@ class FTMSProtocol : ITreadmillProtocol {
         }
 
         sendMutex.withLock {
-            conn?.write(uuid, byteArrayOf(0x08, 0x01), true)
+            c.writeSuspend(uuid, byteArrayOf(0x08, 0x01), true)
         }
         log("стоп (08 01)")
         return true
@@ -177,8 +204,6 @@ class FTMSProtocol : ITreadmillProtocol {
         val v = applySpeedResolution(speedKmh.coerceAtLeast(0.0))
         lastRequestedSpeed = v
         lastSpeedSentAt = System.currentTimeMillis()
-
-        // [ФИКС] Убрана проверка beltRunning. Команда отправляется всегда.
         sendSpeedRaw(v)
         log("скорость $v")
         return true
@@ -186,11 +211,20 @@ class FTMSProtocol : ITreadmillProtocol {
 
     override suspend fun setIncline(percent: Double): Boolean {
         val t = if (roundInclineToWhole) percent.coerceIn(0.0, 30.0).roundToInt().toDouble() else percent.coerceIn(0.0, 30.0)
-        
-        // [ФИКС] Убрана проверка beltRunning. Команда отправляется всегда.
+        lastRequestedIncline = t
+        lastInclineSentAt = System.currentTimeMillis()
         sendInclineRaw(t)
         log("наклон $t%")
         return true
+    }
+
+    /** [НОВОЕ] Отправка произвольных байт через sendMutex — используется из sendRawHex. */
+    suspend fun sendRaw(bytes: ByteArray): Boolean {
+        val uuid = controlPointUuid ?: return false
+        val c = conn ?: return false
+        return sendMutex.withLock {
+            c.writeSuspend(uuid, bytes, true)
+        }
     }
 
     override fun onNotification(n: BleNotification) {
@@ -233,9 +267,9 @@ class FTMSProtocol : ITreadmillProtocol {
             }
             if (flags and (1 shl 3) != 0) {
                 if (o + 2 <= b.size) incline = s16(b, o) / 10.0
-                o += 2 
+                o += 2
             }
-            if (flags and (1 shl 4) != 0) o += 2 
+            if (flags and (1 shl 4) != 0) o += 2
             if (flags and (1 shl 5) != 0) o += 1
             if (flags and (1 shl 6) != 0) o += 1
             if (flags and (1 shl 7) != 0) {
