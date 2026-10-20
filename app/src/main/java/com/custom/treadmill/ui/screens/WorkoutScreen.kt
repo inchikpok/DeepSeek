@@ -58,7 +58,12 @@ fun WorkoutScreen(
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    LaunchedEffect(ws.finished) { if (ws.finished) vm.saveWorkoutLog() }
+    // Автосохранение при завершении (на случай, если finish не сработал в сессии)
+    LaunchedEffect(ws.finished) { 
+        if (ws.finished && ws.running) {
+            vm.saveWorkoutLog() 
+        }
+    }
 
     val targetHr = if (settings.hrMode == HrMode.TARGET) settings.targetHr
                    else (settings.zoneMin + settings.zoneMax) / 2
@@ -92,12 +97,15 @@ fun WorkoutScreen(
 
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                    val progress = if (ws.totalSec > 0) ws.totalElapsedSec.toFloat() / ws.totalSec else 0f
+                    // [ФИКС] Прогресс теперь берется из WorkoutManager (по сегментам)
+                    val progress = ws.progressPercent / 100f
+                    
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    "Сегмент ${ws.currentSegmentIndex + 1}/${ws.totalSegments}: ${ws.currentSegmentName}",
+                                    if (ws.finished) "Тренировка завершена" 
+                                    else "Сегмент ${ws.currentSegmentIndex + 1}/${ws.totalSegments}: ${ws.currentSegmentName}",
                                     fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)
                                 )
                                 if (ws.paused) {
@@ -109,20 +117,37 @@ fun WorkoutScreen(
                             }
                         }
                         val remainSec = (ws.segmentDurationSec - ws.segmentElapsedSec).coerceAtLeast(0)
-                        RollingText(text = formatTime(remainSec), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                        RollingText(
+                            text = if (ws.finished) "00:00" else formatTime(remainSec), 
+                            fontSize = 15.sp, 
+                            fontWeight = FontWeight.SemiBold, 
+                            color = if (ws.finished) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                        )
                     }
                     Spacer(Modifier.height(6.dp))
-                    LinearProgressIndicator(progress = progress.coerceIn(0f, 1f), modifier = Modifier.fillMaxWidth().height(6.dp))
+                    LinearProgressIndicator(
+                        progress = progress.coerceIn(0f, 1f), 
+                        modifier = Modifier.fillMaxWidth().height(6.dp),
+                        color = if (ws.finished) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                    )
                     Spacer(Modifier.height(2.dp))
-                    Text("Общий прогресс: ${(progress * 100).toInt()}%", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Общий прогресс: ${ws.progressPercent}%", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
             Spacer(Modifier.height(6.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                MiniControl("Скорость", "%.1f".format(targetSpeed), "км/ч", { vm.setSpeed(targetSpeed - speedStep) }, { vm.setSpeed(targetSpeed + speedStep) }, Modifier.weight(1f))
-                MiniControl("Наклон", "${targetIncline.roundToInt()}", "%", { vm.setIncline(max(0.0, targetIncline.roundToInt() - 1.0)) }, { vm.setIncline(targetIncline.roundToInt() + 1.0) }, Modifier.weight(1f))
+                MiniControl("Скорость", "%.1f".format(targetSpeed), "км/ч", 
+                    { vm.setSpeed(targetSpeed - speedStep) }, 
+                    { vm.setSpeed(targetSpeed + speedStep) }, 
+                    Modifier.weight(1f)
+                )
+                MiniControl("Наклон", "${targetIncline.roundToInt()}", "%", 
+                    { vm.setIncline(max(0.0, targetIncline.roundToInt() - 1.0)) }, 
+                    { vm.setIncline(targetIncline.roundToInt() + 1.0) }, 
+                    Modifier.weight(1f)
+                )
             }
 
             Spacer(Modifier.height(6.dp))
@@ -143,7 +168,7 @@ fun WorkoutScreen(
                     HeartRateChart(
                         points = hrHistory, 
                         targetHr = targetHr, 
-                        zoneBounds = zoneBounds, // <--- Передаем рассчитанные зоны
+                        zoneBounds = zoneBounds,
                         modifier = Modifier.fillMaxWidth().weight(1f)
                     )
                 }
@@ -161,17 +186,38 @@ fun WorkoutScreen(
 
             Spacer(Modifier.height(6.dp))
 
+            // [ФИКС] Блок кнопок
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val paused = ws.paused
-                Button(
-                    onClick = { vm.togglePauseWorkout() }, enabled = treadmillReady || paused, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 14.dp),
-                    colors = if (paused) ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                    else ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
-                ) { Text(if (paused) "Продолжить" else "Пауза", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                if (ws.finished) {
+                    // Если тренировка завершена, показываем только одну кнопку
+                    Button(
+                        onClick = { 
+                            vm.stopWorkout() // Сбрасывает состояние и останавливает дорожку (на всякий случай)
+                            onBack() 
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                    ) {
+                        Text("Готово", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    // Обычные кнопки во время выполнения
+                    val paused = ws.paused
+                    Button(
+                        onClick = { vm.togglePauseWorkout() }, enabled = treadmillReady || paused, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 14.dp),
+                        colors = if (paused) ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                        else ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ) { Text(if (paused) "Продолжить" else "Пауза", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
 
-                OutlinedButton(onClick = { vm.skipWorkoutSegment() }, enabled = treadmillReady && ws.running && !ws.paused, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 14.dp)) { Text("Пропустить", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                    OutlinedButton(
+                        onClick = { vm.skipWorkoutSegment() }, enabled = treadmillReady && ws.running && !ws.paused, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 14.dp)
+                    ) { Text("Пропустить", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
 
-                Button(onClick = { showExitConfirm = true }, enabled = treadmillReady, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 14.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))) { Text("Стоп", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                    Button(
+                        onClick = { showExitConfirm = true }, enabled = treadmillReady, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 14.dp), 
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
+                    ) { Text("Стоп", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                }
             }
 
             Spacer(Modifier.height(10.dp))
