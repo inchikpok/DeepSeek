@@ -74,7 +74,7 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
             ctx.contentResolver.openOutputStream(uri)?.use { os ->
                 os.write(content.toByteArray(Charsets.UTF_8))
             }
-            savedMessage = "Сохранено ${logs.size} записей"
+            savedMessage = "Сохранено"
         } catch (e: Exception) {
             savedMessage = "Ошибка: ${e.message}"
         }
@@ -90,17 +90,14 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        DebugLog.d("UI", "Debug: Очистить лог")
-                        vm.clearLogs()
-                    }) {
+                    IconButton(onClick = { vm.clearLogs() }) {
                         Icon(Icons.Default.Delete, contentDescription = "Очистить")
                     }
                     IconButton(onClick = {
                         val ts = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
                         saveLauncher.launch("treadmill_log_$ts.txt")
                     }) {
-                        Icon(Icons.Default.Save, contentDescription = "Сохранить в файл")
+                        Icon(Icons.Default.Save, contentDescription = "Сохранить")
                     }
                     IconButton(onClick = {
                         val content = DebugLog.exportText()
@@ -117,62 +114,49 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(12.dp)) {
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp, vertical = 4.dp)) {
 
             savedMessage?.let {
-                Card(
-                    Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(it, modifier = Modifier.weight(1f), fontSize = 13.sp)
-                        TextButton(onClick = { savedMessage = null }) { Text("OK") }
-                    }
-                }
+                Text(it, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
             }
 
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Дорожка: ${treadmillName ?: "—"}", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text(treadmillState.toString(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (treadmillReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+            // 🚀 КОМПАКТНАЯ КАРТОЧКА СТАТУСА
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(treadmillName ?: "Нет подключения", fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text(treadmillState.name, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (treadmillReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text("Протокол: FTMS", fontSize = 12.sp)
-                    Text("Скорость: %.1f · Наклон: %.0f%%".format(data.speedKmh, data.inclinePercent), fontSize = 12.sp)
-                    Text("Записей: ${logs.size}   (показано: ${visibleLogs.size})", fontSize = 12.sp)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "Скорость: %.1f · Наклон: %.0f%% · Логов: ${logs.size}".format(data.speedKmh, data.inclinePercent),
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
             Spacer(Modifier.height(8.dp))
 
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Отправить команду (hex)", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    Spacer(Modifier.height(6.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = hexInput,
-                            onValueChange = { hexInput = it },
-                            label = { Text("hex") },
-                            singleLine = true,
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-                            modifier = Modifier.weight(1f)
-                        )
-                        Button(
-                            onClick = { vm.sendRawHex(hexInput) },
-                            enabled = treadmillReady,
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
-                        ) { Text("Отпр.") }
-                    }
-                }
+            // 🚀 КОМПАКТНЫЙ ВВОД HEX
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = hexInput,
+                    onValueChange = { hexInput = it },
+                    placeholder = { Text("02 96 00", fontSize = 14.sp) },
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 14.sp),
+                    modifier = Modifier.weight(1f).height(54.dp)
+                )
+                Button(
+                    onClick = { vm.sendRawHex(hexInput) },
+                    enabled = treadmillReady,
+                    modifier = Modifier.height(54.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp)
+                ) { Text("Отпр.") }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -216,9 +200,9 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
 @Composable
 private fun TabButton(text: String, selected: Boolean, onClick: () -> Unit) {
     if (selected) {
-        Button(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) { Text(text, fontSize = 13.sp) }
+        Button(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), modifier = Modifier.weight(1f)) { Text(text, fontSize = 13.sp) }
     } else {
-        OutlinedButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) { Text(text, fontSize = 13.sp) }
+        OutlinedButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), modifier = Modifier.weight(1f)) { Text(text, fontSize = 13.sp) }
     }
 }
 
@@ -231,7 +215,6 @@ private fun LogView(logs: List<String>, listState: LazyListState, hideTreadmillF
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Кадры 2ACD", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(4.dp))
-                    // Компактный свитч
                     Switch(
                         checked = !hideTreadmillFrames,
                         onCheckedChange = { onToggleHide() },
