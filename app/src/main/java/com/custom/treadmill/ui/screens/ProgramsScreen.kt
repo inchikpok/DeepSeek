@@ -32,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -329,16 +330,13 @@ private fun WorkoutMiniChart(
         val path = Path()
         var first = true
 
-        // Рисуем столбики скорости
         segments.forEach { seg ->
             val segW = (seg.durationSec.toFloat() / totalSec) * w
             val drawW = (segW - gap).coerceAtLeast(1f)
             
-            // Оставляем 20% высоты сверху для линии наклона
             val speedH = (seg.speedKmh.toFloat() / maxSpeed.toFloat()) * h * 0.8f
             val inclineH = (seg.inclinePercent.toFloat() / maxIncline.toFloat()) * h * 0.8f
 
-            // Цвет столбика: красный если быстрее 8 км/ч, иначе зеленый
             val color = if (seg.speedKmh > 8.0) Color(0xFFE53935) else Color(0xFF26A69A)
             
             drawRoundRect(
@@ -348,7 +346,6 @@ private fun WorkoutMiniChart(
                 cornerRadius = CornerRadius(1f, 1f)
             )
 
-            // Точки для линии наклона
             val centerX = currentX + segW / 2
             val inclineY = h - inclineH
             if (first) {
@@ -361,7 +358,6 @@ private fun WorkoutMiniChart(
             currentX += segW
         }
 
-        // Рисуем оранжевую линию наклона
         drawPath(
             path = path,
             color = Color(0xFFFFB300),
@@ -404,7 +400,6 @@ private fun ProgramCardModern(
                     }
                 }
 
-                // Мини-график
                 WorkoutMiniChart(
                     segments = data.segments,
                     modifier = Modifier
