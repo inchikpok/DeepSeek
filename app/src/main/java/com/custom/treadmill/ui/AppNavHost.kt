@@ -19,6 +19,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -27,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.custom.treadmill.DebugLog
 import com.custom.treadmill.ui.screens.AboutScreen
 import com.custom.treadmill.ui.screens.DebugScreen
 import com.custom.treadmill.ui.screens.HistoryScreen
@@ -54,6 +56,17 @@ fun AppNavHost() {
     val nav = rememberNavController()
     val mainVm: MainViewModel = viewModel()
     val programVm: ProgramViewModel = viewModel()
+
+    // [DEBUGLOG] Логируем навигацию между полноэкранными экранами
+    LaunchedEffect(nav) {
+        nav.addOnDestinationChangedListener { _, destination, arguments ->
+            val route = destination.route ?: "unknown"
+            val args = arguments?.keySet()
+                ?.joinToString { "$it=${arguments.get(it)}" }
+                .orEmpty()
+            DebugLog.d("NAV", "→ $route" + if (args.isNotEmpty()) " ($args)" else "")
+        }
+    }
 
     NavHost(navController = nav, startDestination = Routes.TABS) {
         composable(Routes.TABS) {
@@ -103,7 +116,11 @@ private fun MainTabs(
                 tabs.forEachIndexed { index, tab ->
                     NavigationBarItem(
                         selected = pagerState.currentPage == index,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                        onClick = {
+                            // [DEBUGLOG] Явно логируем таб-нажатие (в дополнение к UI-тапу)
+                            DebugLog.d("NAV", "tab tap: ${tab.title}")
+                            scope.launch { pagerState.animateScrollToPage(index) }
+                        },
                         icon = { Icon(tab.icon, contentDescription = tab.title) },
                         label = { Text(tab.title, fontSize = 11.sp) }
                     )
