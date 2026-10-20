@@ -6,6 +6,7 @@ import com.custom.treadmill.ble.TreadmillSession
 import com.custom.treadmill.data.database.AppDatabase
 import com.custom.treadmill.data.repository.ProgramRepository
 import com.custom.treadmill.data.repository.SettingsStore
+import com.custom.treadmill.logic.TtsManager
 
 class TreadmillApp : Application() {
 
@@ -17,6 +18,8 @@ class TreadmillApp : Application() {
         private set
     lateinit var settingsStore: SettingsStore
         private set
+    lateinit var ttsManager: TtsManager
+        private set
     lateinit var session: TreadmillSession
         private set
 
@@ -27,6 +30,7 @@ class TreadmillApp : Application() {
         database = AppDatabase.get(this)
         programRepository = ProgramRepository(database.programDao(), database.workoutLogDao())
         settingsStore = SettingsStore(this)
+        ttsManager = TtsManager(this)
         session = TreadmillSession(this)
     }
 
