@@ -7,14 +7,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,6 +21,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -33,16 +32,12 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,7 +45,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.zIndex
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.database.ProgramEntity
@@ -58,8 +52,9 @@ import com.custom.treadmill.data.database.ProgramSegment
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import com.custom.treadmill.ui.viewmodels.ProgramViewModel
 import kotlinx.coroutines.delay
-import java.util.UUID
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import java.util.UUID
 
 enum class SortMode { NAME_ASC, NAME_DESC, NEWEST }
 
@@ -334,7 +329,7 @@ private fun ProgramCardModern(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(entity.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(entity.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                     if (entity.description.isNotBlank()) {
                         Text(entity.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -384,11 +379,11 @@ private fun ProgramCardModern(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("${i + 1}.", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(24.dp))
-                            Text(seg.name.ifBlank { "Сегмент" }, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(seg.name.ifBlank { "Сегмент" }, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                             val m = seg.durationSec / 60
                             val s = seg.durationSec % 60
                             val timeStr = if (m > 0) "${m}м ${s}с" else "${s}с"
-                            Text("$timeStr · %.1f км/ч · %.0f%%".format(seg.speedKmh, seg.inclinePercent), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Monospace)
+                            Text("$timeStr · %.1f км/ч · %.0f%%".format(seg.speedKmh, seg.inclinePercent), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                         }
                     }
                 }
@@ -481,17 +476,17 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
 }
 
 // ==========================================
-// 🚀 НОВЫЙ РЕДАКТОР С ПЕРЕТАСКИВАНИЕМ (FIXED)
+// 🚀 РЕДАКТОР С ПЕРЕТАСКИВАНИЕМ
 // ==========================================
 private data class SegmentEdit(
-    val id: String = UUID.randomUUID().toString(),
+    val id: String = UUID.randomUUID().toString(), // ID нужен для стабильной работы LazyColumn
     val name: String = "", 
     val durationSec: Int = 60, 
     val speedKmh: Double = 5.0, 
     val inclinePercent: Double = 0.0
 )
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProgramEditorScreen(
     initial: ProgramData, isNew: Boolean, onShowMessage: (String) -> Unit, onSave: (ProgramData) -> Unit, onDismiss: () -> Unit
@@ -504,13 +499,6 @@ private fun ProgramEditorScreen(
     }
     var name by remember(initial) { mutableStateOf(initial.name) }
     var description by remember(initial) { mutableStateOf(initial.description) }
-    
-    val listState = rememberLazyListState()
-    val haptics = LocalHapticFeedback.current
-    
-    var draggedItemIndex by remember { mutableStateOf<Int?>(null) }
-    var draggedOffset by remember { mutableStateOf(0f) }
-    val itemHeights = remember { mutableStateMapOf<Int, Int>() }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -519,7 +507,7 @@ private fun ProgramEditorScreen(
                     TopAppBar(
                         title = {
                             Column {
-                                Text(if (isNew) "Новая программа" else "Редактор", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Text(if (isNew) "Новая программа" else "Редактор", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                                 Text("Всего: ${segments.sumOf { it.durationSec } / 60} мин", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         },
@@ -538,7 +526,8 @@ private fun ProgramEditorScreen(
                         Box(Modifier.fillMaxWidth().padding(12.dp)) {
                             Button(
                                 onClick = { 
-                                    segments.add(SegmentEdit(name = "Сегмент ${segments.size + 1}", durationSec = 60, speedKmh = segments.lastOrNull()?.speedKmh ?: 5.0, inclinePercent = segments.lastOrNull()?.inclinePercent ?: 0.0)) 
+                                    val last = segments.lastOrNull()
+                                    segments.add(SegmentEdit(name = "Сегмент ${segments.size + 1}", durationSec = 60, speedKmh = last?.speedKmh ?: 5.0, inclinePercent = last?.inclinePercent ?: 0.0)) 
                                 },
                                 modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(10.dp)
                             ) {
@@ -567,74 +556,35 @@ private fun ProgramEditorScreen(
                     )
                     
                     Spacer(Modifier.height(12.dp))
-                    Text("Сегменты (зажмите ≡ для перетаскивания)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Сегменты (зажмите ≡ для перетаскивания)", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(6.dp))
                     
                     LazyColumn(
-                        state = listState,
                         modifier = Modifier.weight(1f), 
-                        verticalArrangement = Arrangement.spacedBy(6.dp), 
+                        verticalArrangement = Arrangement.spacedBy(8.dp), 
                         contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
                         itemsIndexed(segments, key = { _, item -> item.id }) { index, seg ->
-                            val isDragging = index == draggedItemIndex
-                            val offsetY = if (isDragging) draggedOffset else 0f
-                            
                             SegmentEditor(
-                                index = index, 
-                                seg = seg,
+                                index = index, total = segments.size, seg = seg,
                                 onChange = { newSeg -> segments[index] = newSeg },
-                                onDuplicate = { 
-                                    val copy = seg.copy(id = UUID.randomUUID().toString(), name = seg.name + " (копия)")
-                                    segments.add(index + 1, copy) 
+                                onMoveUp = { 
+                                    if (index > 0) { 
+                                        val tmp = segments[index - 1]; 
+                                        segments[index - 1] = segments[index]; 
+                                        segments[index] = tmp 
+                                    } 
                                 },
+                                onMoveDown = { 
+                                    if (index < segments.size - 1) { 
+                                        val tmp = segments[index + 1]; 
+                                        segments[index + 1] = segments[index]; 
+                                        segments[index] = tmp 
+                                    } 
+                                },
+                                onDuplicate = { segments.add(index + 1, seg.copy(id = UUID.randomUUID().toString(), name = seg.name + " (копия)")) },
                                 onDelete = { if (segments.size > 1) segments.removeAt(index) },
-                                canDelete = segments.size > 1,
-                                modifier = Modifier
-                                    .zIndex(if (isDragging) 1f else 0f)
-                                    .animateItemPlacement()
-                                    .onGloballyPositioned { coordinates ->
-                                        itemHeights[index] = coordinates.size.height
-                                    }
-                                    .graphicsLayer { translationY = offsetY },
-                                dragHandleModifier = Modifier.pointerInput(segments.size) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            draggedItemIndex = index
-                                            draggedOffset = 0f
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            change.consume()
-                                            draggedOffset += dragAmount.y
-                                            
-                                            val itemHeight = itemHeights[index] ?: 1
-                                            if (itemHeight > 0) {
-                                                val shift = (draggedOffset / itemHeight).roundToInt()
-                                                if (shift != 0) {
-                                                    val targetIndex = (index + shift).coerceIn(0, segments.size - 1)
-                                                    if (targetIndex != index) {
-                                                        val item = segments.removeAt(index)
-                                                        segments.add(targetIndex, item)
-                                                        
-                                                        draggedItemIndex = targetIndex
-                                                        draggedOffset -= shift * itemHeight
-                                                        
-                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        onDragEnd = {
-                                            draggedItemIndex = null
-                                            draggedOffset = 0f
-                                        },
-                                        onDragCancel = {
-                                            draggedItemIndex = null
-                                            draggedOffset = 0f
-                                        }
-                                    )
-                                }
+                                canDelete = segments.size > 1
                             )
                         }
                     }
@@ -657,13 +607,14 @@ private fun SlimTextField(
             value = value,
             onValueChange = onValueChange,
             textStyle = LocalTextStyle.current.copy(
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurface,
             ),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp)
+                .height(42.dp)
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
                 .padding(horizontal = 10.dp),
@@ -676,6 +627,7 @@ private fun SlimTextField(
     }
 }
 
+// 🚀 ИСПРАВЛЕННАЯ КНОПКА (с rememberUpdatedState)
 @Composable
 private fun HoldableStepButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -683,46 +635,39 @@ private fun HoldableStepButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
-    var isPressed by remember { mutableStateOf(false) }
-    val haptics = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    
+    val currentOnClick by rememberUpdatedState(onClick)
 
     LaunchedEffect(isPressed) {
         if (isPressed) {
-            delay(350) // Задержка перед ускорением
-            while (isPressed) {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onClick()
-                delay(60)
+            delay(400)
+            while (true) {
+                currentOnClick()
+                delay(80)
             }
         }
     }
 
-    Icon(
-        imageVector = icon,
-        contentDescription = null,
-        tint = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+    IconButton(
+        onClick = { if (enabled) currentOnClick() },
+        enabled = enabled,
+        interactionSource = interactionSource,
         modifier = modifier
-            .size(32.dp)
-            .clip(CircleShape)
+            .size(40.dp)
             .background(
-                if (enabled) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
+                color = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                shape = CircleShape
             )
-            .pointerInput(enabled) {
-                if (!enabled) return@pointerInput
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    down.consume()
-                    isPressed = true
-                    onClick()
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    
-                    waitForUpOrCancellation()
-                    isPressed = false
-                }
-            }
-            .padding(6.dp)
-    )
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(20.dp)
+        )
+    }
 }
 
 @Composable
@@ -733,23 +678,13 @@ private fun TimePickerDialog(
 ) {
     val values = remember { (0..3600 step 5).toList() }
     var selectedIndex by remember { mutableIntStateOf((initialSeconds / 5).coerceIn(0, values.size - 1)) }
-    
-    // 🚀 Берем цвета прямо из темы приложения
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
 
     Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp), 
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth().padding(16.dp)
-        ) {
+        Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) {
-                        Icon(Icons.Default.Close, contentDescription = "Закрыть", modifier = Modifier.size(16.dp))
-                    }
-                }
+                Text("Выберите время", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(Modifier.height(16.dp))
                 
                 AndroidView(
                     factory = { ctx ->
@@ -765,7 +700,6 @@ private fun TimePickerDialog(
                             setOnValueChangedListener { _, _, newVal ->
                                 selectedIndex = newVal
                             }
-                            // 🚀 Используем цвет из темы
                             try {
                                 val f = NumberPicker::class.java.getDeclaredField("mSelectorWheelPaint")
                                 f.isAccessible = true
@@ -781,15 +715,10 @@ private fun TimePickerDialog(
                     modifier = Modifier.height(180.dp)
                 )
 
-                Spacer(Modifier.height(24.dp))
-                
-                Button(
-                    onClick = { onConfirm(values[selectedIndex]) },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("Подтвердить", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = onDismiss) { Text("Отмена") }
+                    Button(onClick = { onConfirm(values[selectedIndex]) }) { Text("Готово") }
                 }
             }
         }
@@ -798,56 +727,75 @@ private fun TimePickerDialog(
 
 @Composable
 private fun SegmentEditor(
-    index: Int, 
-    seg: SegmentEdit,
+    index: Int, total: Int, seg: SegmentEdit,
     onChange: (SegmentEdit) -> Unit, 
+    onMoveUp: () -> Unit, 
+    onMoveDown: () -> Unit, 
     onDuplicate: () -> Unit, 
     onDelete: () -> Unit, 
-    canDelete: Boolean,
-    modifier: Modifier = Modifier,
-    dragHandleModifier: Modifier = Modifier
+    canDelete: Boolean
 ) {
-    var nameState by remember(seg.id) { mutableStateOf(seg.name) }
+    var nameState by remember(seg) { mutableStateOf(seg.name) }
     var showTimePicker by remember { mutableStateOf(false) }
 
     Card(
-        modifier = modifier.fillMaxWidth(), 
+        Modifier.fillMaxWidth(), 
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
         shape = RoundedCornerShape(10.dp)
     ) {
         Column(Modifier.padding(10.dp)) {
             
-            // Шапка сегмента
+            // --- ШАПКА СЕГМЕНТА ---
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Menu,
-                    contentDescription = "Перетащить",
-                    modifier = dragHandleModifier.padding(end = 6.dp).size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 
-                Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(20.dp)) {
+                // 🚀 ИКОНКА ДЛЯ ПЕРЕТАСКИВАНИЯ (СВАЙП ВВЕРХ/ВНИЗ)
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures { change, dragAmount ->
+                                change.consume()
+                                if (dragAmount > 20f) { onMoveDown() }
+                                else if (dragAmount < -20f) { onMoveUp() }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Menu, // Три полоски
+                        contentDescription = "Перетащить",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+
+                Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(22.dp)) {
                     Box(contentAlignment = Alignment.Center) {
                         Text("${index + 1}", color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
                 
                 BasicTextField(
                     value = nameState,
                     onValueChange = { nameState = it; onChange(seg.copy(name = it)) },
-                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                    textStyle = LocalTextStyle.current.copy(
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     singleLine = true,
                     modifier = Modifier
                         .weight(1f)
-                        .height(36.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp),
+                        .height(42.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp),
                     decorationBox = { innerTextField ->
                         Box(contentAlignment = Alignment.CenterStart, modifier = Modifier.fillMaxSize()) {
                             if (nameState.isEmpty()) {
-                                Text("Название", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontSize = 13.sp)
+                                Text("Название сегмента", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontSize = 14.sp)
                             }
                             innerTextField()
                         }
@@ -856,22 +804,27 @@ private fun SegmentEditor(
 
                 Spacer(Modifier.width(4.dp))
                 
+                // Кнопки точного перемещения (на случай, если свайп неудобен)
                 Column {
-                    IconButton(onClick = onDuplicate, modifier = Modifier.size(20.dp)) { Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(14.dp)) }
-                    IconButton(onClick = onDelete, enabled = canDelete, modifier = Modifier.size(20.dp)) {
-                        Icon(Icons.Default.Delete, null, modifier = Modifier.size(14.dp), tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row {
+                        IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.ArrowUpward, null, modifier = Modifier.size(16.dp)) }
+                        IconButton(onClick = onMoveDown, enabled = index < total - 1, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.ArrowDownward, null, modifier = Modifier.size(16.dp)) }
+                    }
+                    Row {
+                        IconButton(onClick = onDuplicate, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp)) }
+                        IconButton(onClick = onDelete, enabled = canDelete, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // Параметры
+            // --- ВРЕМЯ ---
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Время", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Время", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     HoldableStepButton(
                         icon = Icons.Default.Remove,
                         onClick = { onChange(seg.copy(durationSec = (seg.durationSec - 5).coerceAtLeast(5))) },
@@ -879,12 +832,12 @@ private fun SegmentEditor(
                     )
                     Text(
                         text = "%02d:%02d".format(seg.durationSec / 60, seg.durationSec % 60),
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
                             .clickable { showTimePicker = true }
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                        color = MaterialTheme.colorScheme.onSurface
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                     HoldableStepButton(
                         icon = Icons.Default.Add,
@@ -894,11 +847,12 @@ private fun SegmentEditor(
                 }
             }
 
-            Spacer(Modifier.height(4.dp))
+            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
+            // --- СКОРОСТЬ ---
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Скорость", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Скорость (км/ч)", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     HoldableStepButton(
                         icon = Icons.Default.Remove,
                         onClick = { onChange(seg.copy(speedKmh = (seg.speedKmh - 0.1).coerceAtLeast(0.5).roundToTenth())) },
@@ -906,11 +860,11 @@ private fun SegmentEditor(
                     )
                     Text(
                         text = "%.1f".format(seg.speedKmh),
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.width(40.dp),
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.width(50.dp),
+                        textAlign = TextAlign.Center
                     )
                     HoldableStepButton(
                         icon = Icons.Default.Add,
@@ -920,11 +874,12 @@ private fun SegmentEditor(
                 }
             }
 
-            Spacer(Modifier.height(4.dp))
+            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
+            // --- НАКЛОН ---
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Наклон", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Наклон (%)", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     HoldableStepButton(
                         icon = Icons.Default.Remove,
                         onClick = { onChange(seg.copy(inclinePercent = (seg.inclinePercent - 1.0).coerceAtLeast(0.0))) },
@@ -932,11 +887,11 @@ private fun SegmentEditor(
                     )
                     Text(
                         text = "%.0f".format(seg.inclinePercent),
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.width(40.dp),
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.width(50.dp),
+                        textAlign = TextAlign.Center
                     )
                     HoldableStepButton(
                         icon = Icons.Default.Add,
