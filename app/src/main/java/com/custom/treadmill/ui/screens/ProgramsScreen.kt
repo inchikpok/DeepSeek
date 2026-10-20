@@ -7,16 +7,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed // <-- ДОБАВЛЕН ИМПОРТ
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack // <-- ДОБАВЛЕН ИМПОРТ
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.FileUpload
@@ -26,7 +27,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -146,7 +146,7 @@ fun ProgramsScreen(
             ) {
                 if (onBack != null) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад") // <-- ИСПРАВЛЕНО
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 } else {
                     Spacer(Modifier.width(16.dp))
@@ -323,7 +323,6 @@ private fun ProgramCardModern(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
     ) {
         Column(Modifier.fillMaxWidth()) {
-            // Основная часть
             Row(
                 Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -370,7 +369,6 @@ private fun ProgramCardModern(
                 }
             }
 
-            // 🚀 РАСКРЫВАЮЩИЙСЯ СПИСОК СЕГМЕНТОВ
             AnimatedVisibility(visible = expanded) {
                 Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
                     HorizontalDivider(Modifier.padding(bottom = 8.dp))
@@ -379,31 +377,12 @@ private fun ProgramCardModern(
                             Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                "${i + 1}.",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.width(24.dp)
-                            )
-                            Text(
-                                seg.name.ifBlank { "Сегмент" },
-                                fontSize = 13.sp,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            
+                            Text("${i + 1}.", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(24.dp))
+                            Text(seg.name.ifBlank { "Сегмент" }, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             val m = seg.durationSec / 60
                             val s = seg.durationSec % 60
                             val timeStr = if (m > 0) "${m}м ${s}с" else "${s}с"
-                            
-                            Text(
-                                "$timeStr · %.1f км/ч · %.0f%%".format(seg.speedKmh, seg.inclinePercent),
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontFamily = FontFamily.Monospace
-                            )
+                            Text("$timeStr · %.1f км/ч · %.0f%%".format(seg.speedKmh, seg.inclinePercent), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                         }
                     }
                 }
@@ -496,7 +475,7 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
 }
 
 // ==========================================
-// РЕДАКТОР
+// 🚀 НОВЫЙ СУПЕР-КОМПАКТНЫЙ РЕДАКТОР
 // ==========================================
 private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
 
@@ -537,46 +516,48 @@ private fun ProgramEditorScreen(
                 },
                 bottomBar = {
                     Surface(shadowElevation = 8.dp) {
-                        Box(Modifier.fillMaxWidth().padding(16.dp)) {
+                        Box(Modifier.fillMaxWidth().padding(12.dp)) {
                             Button(
                                 onClick = { 
                                     val last = segments.lastOrNull()
                                     segments.add(SegmentEdit("Сегмент ${segments.size + 1}", 60, last?.speedKmh ?: 5.0, last?.inclinePercent ?: 0.0)) 
                                 },
-                                modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp)
+                                modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(10.dp)
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Добавить сегмент", fontSize = 16.sp)
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Добавить сегмент", fontSize = 15.sp)
                             }
                         }
                     }
                 }
             ) { padding ->
-                Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+                Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
                     
-                    // Верхние поля
+                    // Верхние поля (Название и Описание)
                     OutlinedTextField(
                         value = name, 
                         onValueChange = { name = it }, 
-                        label = { Text("Название программы") }, 
+                        label = { Text("Название программы", fontSize = 12.sp) }, 
                         singleLine = true, 
+                        textStyle = LocalTextStyle.current.copy(fontSize = 15.sp),
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(10.dp)
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(4.dp))
                     OutlinedTextField(
                         value = description, 
                         onValueChange = { description = it }, 
-                        label = { Text("Описание (опционально)") }, 
+                        label = { Text("Описание (опционально)", fontSize = 12.sp) }, 
                         singleLine = true, 
+                        textStyle = LocalTextStyle.current.copy(fontSize = 15.sp),
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(10.dp)
                     )
                     
-                    Spacer(Modifier.height(16.dp))
-                    Text("Сегменты тренировки", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("Сегменты", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Spacer(Modifier.height(6.dp))
                     
                     LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
                         itemsIndexed(segments) { index, seg ->
@@ -597,101 +578,163 @@ private fun ProgramEditorScreen(
     }
 }
 
+// 🚀 КОМПАКТНЫЙ ВВОД ЧИСЕЛ
+@Composable
+private fun CompactNumberField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    suffix: String = "",
+    modifier: Modifier = Modifier
+) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        textStyle = LocalTextStyle.current.copy(
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium
+        ),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        singleLine = true,
+        modifier = modifier
+            .height(38.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        decorationBox = { innerTextField ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (value.isEmpty()) {
+                        Text("0", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f), fontSize = 14.sp)
+                    }
+                    innerTextField()
+                }
+                if (suffix.isNotEmpty()) {
+                    Text(suffix, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp))
+                }
+            }
+        }
+    )
+}
+
 @Composable
 private fun SegmentEditor(
     index: Int, total: Int, seg: SegmentEdit,
     onChange: (SegmentEdit) -> Unit, onMoveUp: () -> Unit, onMoveDown: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit, canDelete: Boolean
 ) {
-    // Локальный стейт для строк, чтобы можно было стирать текст при вводе
     var nameState by remember(seg) { mutableStateOf(seg.name) }
-    var durationState by remember(seg) { mutableStateOf(seg.durationSec.toString()) }
-    var speedState by remember(seg) { mutableStateOf(seg.speedKmh.toString()) }
-    var inclineState by remember(seg) { mutableStateOf(seg.inclinePercent.toString()) }
+    
+    // Время: разделено на минуты и секунды
+    var minState by remember(seg.durationSec) { mutableStateOf((seg.durationSec / 60).toString()) }
+    var secState by remember(seg.durationSec) { mutableStateOf((seg.durationSec % 60).toString()) }
+    fun updateTime() {
+        val m = minState.toIntOrNull() ?: 0
+        val s = secState.toIntOrNull() ?: 0
+        onChange(seg.copy(durationSec = m * 60 + s))
+    }
+
+    var speedState by remember(seg.speedKmh) { mutableStateOf(seg.speedKmh.toString()) }
+    var inclineState by remember(seg.inclinePercent) { mutableStateOf(seg.inclinePercent.toString()) }
 
     Card(
         Modifier.fillMaxWidth(), 
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
+        shape = RoundedCornerShape(10.dp)
     ) {
-        Column(Modifier.padding(12.dp)) {
-            // Шапка сегмента (номер + кнопки)
+        Column(Modifier.padding(10.dp)) {
+            // Шапка (Номер, Название, Кнопки)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(24.dp)) {
+                Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(22.dp)) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text("${index + 1}", color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("${index + 1}", color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.ArrowUpward, contentDescription = "Вверх", modifier = Modifier.size(18.dp)) }
-                IconButton(onClick = onMoveDown, enabled = index < total - 1, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.ArrowDownward, contentDescription = "Вниз", modifier = Modifier.size(18.dp)) }
-                IconButton(onClick = onDuplicate, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.ContentCopy, contentDescription = "Копировать", modifier = Modifier.size(18.dp)) }
-                IconButton(onClick = onDelete, enabled = canDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Удалить", modifier = Modifier.size(18.dp), tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            
-            // Название
-            OutlinedTextField(
-                value = nameState,
-                onValueChange = { nameState = it; onChange(seg.copy(name = it)) },
-                label = { Text("Название сегмента", fontSize = 12.sp) },
-                textStyle = MaterialTheme.typography.bodyMedium,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            )
-            
-            Spacer(Modifier.height(8.dp))
-            
-            // 🚀 НОВЫЙ КОМПАКТНЫЙ ВВОД ПАРАМЕТРОВ (без слайдеров)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Время (сек)
+                Spacer(Modifier.width(8.dp))
                 OutlinedTextField(
-                    value = durationState,
-                    onValueChange = { 
-                        durationState = it
-                        val v = it.toIntOrNull() ?: 0
-                        onChange(seg.copy(durationSec = v))
-                    },
-                    label = { Text("Сек.", fontSize = 11.sp) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    value = nameState,
+                    onValueChange = { nameState = it; onChange(seg.copy(name = it)) },
+                    placeholder = { Text("Название сегмента", fontSize = 13.sp) },
                     singleLine = true,
-                    modifier = Modifier.weight(1.2f),
-                    textStyle = MaterialTheme.typography.bodyMedium,
+                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
+                    modifier = Modifier.weight(1f).height(48.dp),
                     shape = RoundedCornerShape(8.dp)
                 )
-                
-                // Скорость
-                OutlinedTextField(
+                Spacer(Modifier.width(4.dp))
+                Column {
+                    IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(22.dp)) { Icon(Icons.Default.ArrowUpward, null, modifier = Modifier.size(16.dp)) }
+                    IconButton(onClick = onMoveDown, enabled = index < total - 1, modifier = Modifier.size(22.dp)) { Icon(Icons.Default.ArrowDownward, null, modifier = Modifier.size(16.dp)) }
+                }
+                Column {
+                    IconButton(onClick = onDuplicate, modifier = Modifier.size(22.dp)) { Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp)) }
+                    IconButton(onClick = onDelete, enabled = canDelete, modifier = Modifier.size(22.dp)) {
+                        Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Время
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Время:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(50.dp))
+                CompactNumberField(value = minState, onValueChange = { minState = it; updateTime() }, suffix = "мин", modifier = Modifier.weight(1f))
+                CompactNumberField(value = secState, onValueChange = { secState = it; updateTime() }, suffix = "сек", modifier = Modifier.weight(1f))
+            }
+            
+            Spacer(Modifier.height(4.dp))
+
+            // Скорость (поле + ползунок)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Скорость:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(60.dp))
+                Slider(
+                    value = seg.speedKmh.toFloat(),
+                    onValueChange = { 
+                        val v = (it * 10).roundToInt() / 10.0
+                        speedState = v.toString()
+                        onChange(seg.copy(speedKmh = v)) 
+                    },
+                    valueRange = 0.5f..20f,
+                    modifier = Modifier.weight(1f).height(24.dp)
+                )
+                CompactNumberField(
                     value = speedState,
                     onValueChange = { 
                         speedState = it
                         val v = it.replace(',', '.').toDoubleOrNull() ?: 0.0
                         onChange(seg.copy(speedKmh = v))
                     },
-                    label = { Text("Км/ч", fontSize = 11.sp) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    shape = RoundedCornerShape(8.dp)
+                    suffix = "км/ч",
+                    modifier = Modifier.width(68.dp)
                 )
-                
-                // Наклон
-                OutlinedTextField(
+            }
+
+            // Наклон (поле + ползунок)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Наклон:", fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(60.dp))
+                Slider(
+                    value = seg.inclinePercent.toFloat(),
+                    onValueChange = { 
+                        val v = it.roundToInt().toDouble()
+                        inclineState = v.toString()
+                        onChange(seg.copy(inclinePercent = v)) 
+                    },
+                    valueRange = 0f..15f,
+                    modifier = Modifier.weight(1f).height(24.dp)
+                )
+                CompactNumberField(
                     value = inclineState,
                     onValueChange = { 
                         inclineState = it
                         val v = it.replace(',', '.').toDoubleOrNull() ?: 0.0
                         onChange(seg.copy(inclinePercent = v))
                     },
-                    label = { Text("%", fontSize = 11.sp) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    shape = RoundedCornerShape(8.dp)
+                    suffix = "%",
+                    modifier = Modifier.width(58.dp)
                 )
             }
         }
