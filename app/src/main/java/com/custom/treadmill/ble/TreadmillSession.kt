@@ -131,10 +131,13 @@ class TreadmillSession(private val appContext: Context) {
             _treadmillData.collect { d ->
                 if (d.speedKmh > 0.05) { speedSum += d.speedKmh; speedCount++ }
                 val now = System.currentTimeMillis()
-                if (!isStartingBelt && now - lastSpeedCmdTime > 3500 && abs(_targetSpeed.value - d.speedKmh) > 0.1) {
+                val isWorkoutRunning = workoutManager.state.value.running
+                
+                // [ФИКС] Не сбрасываем заданные значения, если идет программа
+                if (!isStartingBelt && !isWorkoutRunning && now - lastSpeedCmdTime > 3500 && abs(_targetSpeed.value - d.speedKmh) > 0.1) {
                     _targetSpeed.value = d.speedKmh
                 }
-                if (now - lastInclineCmdTime > 3500 && abs(_targetIncline.value - d.inclinePercent) > 0.4) {
+                if (!isWorkoutRunning && now - lastInclineCmdTime > 3500 && abs(_targetIncline.value - d.inclinePercent) > 0.4) {
                     _targetIncline.value = d.inclinePercent
                 }
             }
@@ -431,12 +434,24 @@ class TreadmillSession(private val appContext: Context) {
         scope.launch {
             try {
                 protocol?.start()
-                setSpeed(1.0)
+                setSpeed(1.0) // Разбудить дорожку
                 if (waitForBeltRunning(0.9, 30000L)) {
                     workoutManager.start(
                         scope = scope, program = program,
-                        onSetSpeed = { setSpeed(it) },
-                        onSetIncline = { setIncline(it) },
+                        onSetSpeed = { 
+                            val s = settingsStore.settings.value
+                            val safe = it.coerceIn(s.minSpeedKmh, s.maxSpeedKmh)
+                            _targetSpeed.value = safe
+                            lastSpeedCmdTime = System.currentTimeMillis()
+                            protocol?.setSpeed(safe) // Ждем выполнения
+                        },
+                        onSetIncline = { 
+                            val s = settingsStore.settings.value
+                            val safe = it.coerceIn(0.0, s.maxInclinePercent)
+                            _targetIncline.value = safe
+                            lastInclineCmdTime = System.currentTimeMillis()
+                            protocol?.setIncline(safe) // Ждем выполнения
+                        },
                         onFinish = {
                             protocol?.stop()
                             _isPaused.value = false
@@ -455,7 +470,7 @@ class TreadmillSession(private val appContext: Context) {
         scope.launch {
             try {
                 protocol?.start()
-                setSpeed(1.0)
+                setSpeed(1.0) // Разбудить дорожку
                 if (waitForBeltRunning(0.9, 30000L)) workoutManager.resume()
             } finally {
                 isStartingBelt = false
