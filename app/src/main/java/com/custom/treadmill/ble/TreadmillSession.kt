@@ -4,10 +4,10 @@ import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import com.custom.treadmill.DebugLog
 import com.custom.treadmill.TreadmillApp
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.database.WorkoutLogEntity
-import com.custom.treadmill.logic.HeartRateController
 import com.custom.treadmill.logic.WorkoutManager
 import com.custom.treadmill.service.TreadmillService
 import com.custom.treadmill.ui.components.HrPoint
@@ -85,8 +85,8 @@ class TreadmillSession(private val appContext: Context) {
     private val _uiCalories = MutableStateFlow(0)
     val uiCalories: StateFlow<Int> = _uiCalories.asStateFlow()
 
-    private val _logs = MutableStateFlow<List<String>>(emptyList())
-    val logs: StateFlow<List<String>> = _logs.asStateFlow()
+    // [DEBUGLOG] Единый хаб логов вместо локального _logs
+    val logs: StateFlow<List<String>> = DebugLog.lines
 
     private var lastSpeedCmdTime = 0L
     private var lastInclineCmdTime = 0L
@@ -107,8 +107,11 @@ class TreadmillSession(private val appContext: Context) {
     private var workoutLogSaved = false
 
     init {
+        // [DEBUGLOG] Инициализация хаба логирования (файл + память)
+        DebugLog.init(appContext)
+
         scope.launch { ble.scanLog.collect { addLog(it) } }
-        
+
         scope.launch {
             _heartRate.collect { hr ->
                 if (hr > 0) {
@@ -155,7 +158,7 @@ class TreadmillSession(private val appContext: Context) {
                 val met = if (d.speedKmh < 6.0) 1.0 + (d.speedKmh * 0.5) + (d.inclinePercent * 0.1)
                 else 1.0 + (d.speedKmh * 0.9) + (d.inclinePercent * 0.15)
                 val kcalPerMin = (met * 3.5 * weight) / 200.0
-                
+
                 _uiElapsedSec.value += 1
                 _uiDistanceKm.value += d.speedKmh / 3600.0
                 totalCaloriesDouble += kcalPerMin / 60.0
@@ -173,17 +176,17 @@ class TreadmillSession(private val appContext: Context) {
         lastConnectedMac = device.address
         isManualDisconnect = false
         disconnectTreadmillInternal()
-        
+
         _treadmillName.value = try { device.name } catch (_: SecurityException) { null } ?: "Дорожка"
-        
+
         val intent = Intent(appContext, TreadmillService::class.java)
         ContextCompat.startForegroundService(appContext, intent)
 
         val conn = BleConnection(appContext, "TR")
         treadmillConn = conn
-        
+
         treadmillLogJob = scope.launch { conn.log.collect { addLog(it) } }
-        
+
         treadmillStateJob = scope.launch {
             conn.state.collect { state ->
                 _treadmillState.value = state
@@ -205,7 +208,7 @@ class TreadmillSession(private val appContext: Context) {
         if (isAutoReconnecting) return
         val mac = lastConnectedMac ?: return
         val adapter = ble.adapter ?: return
-        
+
         isAutoReconnecting = true
         addLog("Связь потеряна. Запуск автопереподключения к $mac...")
         _statusMessage.value = "Связь потеряна. Переподключение..."
@@ -213,18 +216,18 @@ class TreadmillSession(private val appContext: Context) {
         scope.launch {
             for (i in 1..10) {
                 if (_treadmillState.value == BleConnectionState.READY) break
-                
+
                 addLog("Попытка переподключения $i из 10...")
                 val device = try { adapter.getRemoteDevice(mac) } catch (_: Exception) { null }
-                
+
                 if (device != null) {
                     _treadmillState.value = BleConnectionState.CONNECTING
                     val conn = BleConnection(appContext, "TR")
                     treadmillConn = conn
-                    
+
                     treadmillLogJob?.cancel()
                     treadmillLogJob = scope.launch { conn.log.collect { addLog(it) } }
-                    
+
                     treadmillStateJob = scope.launch {
                         conn.state.collect { state ->
                             _treadmillState.value = state
@@ -236,7 +239,7 @@ class TreadmillSession(private val appContext: Context) {
                 }
                 delay(3000)
             }
-            
+
             isAutoReconnecting = false
             if (_treadmillState.value != BleConnectionState.READY) {
                 addLog("Автопереподключение не удалось после 10 попыток.")
@@ -251,8 +254,8 @@ class TreadmillSession(private val appContext: Context) {
 
     private fun onTreadmillReady(conn: BleConnection) {
         scope.launch {
-            val p = FTMSProtocol().apply { 
-                sendStartCommand = true 
+            val p = FTMSProtocol().apply {
+                sendStartCommand = true
                 onLog = { msg -> addLog(msg) }
             }
             protocol = p
@@ -302,7 +305,7 @@ class TreadmillSession(private val appContext: Context) {
         val conn = BleConnection(appContext, "HR")
         hrConn = conn
         hrService.reset()
-        
+
         hrLogJob = scope.launch { conn.log.collect { addLog(it) } }
         hrStateJob = scope.launch {
             conn.state.collect { state ->
@@ -360,7 +363,6 @@ class TreadmillSession(private val appContext: Context) {
             if (_treadmillData.value.speedKmh >= minSpeedKmh) return true
             val now = System.currentTimeMillis()
             if (now - lastPingAt >= 4000L) {
-                // [ФИКС] Если дорожка спит, пингуем её не только командой 07, но и сразу шлем скорость
                 protocol?.ping07()
                 val target = if (speedBeforePause > 1.0) speedBeforePause else 1.0
                 setSpeed(target)
@@ -384,9 +386,8 @@ class TreadmillSession(private val appContext: Context) {
         scope.launch {
             try {
                 protocol?.start()
-                // [ФИКС] Сразу шлем команду скорости, чтобы "разбудить" дорожку
                 setSpeed(if (resumeSpeed >= 1.0) resumeSpeed else 1.0)
-                
+
                 if (waitForBeltRunning(0.9, 30000L)) {
                     val targetInclineLocal = _targetIncline.value
                     if (targetInclineLocal > 0.0) protocol?.setIncline(targetInclineLocal)
@@ -430,7 +431,7 @@ class TreadmillSession(private val appContext: Context) {
         scope.launch {
             try {
                 protocol?.start()
-                setSpeed(1.0) // Разбудить дорожку
+                setSpeed(1.0)
                 if (waitForBeltRunning(0.9, 30000L)) {
                     workoutManager.start(
                         scope = scope, program = program,
@@ -454,7 +455,7 @@ class TreadmillSession(private val appContext: Context) {
         scope.launch {
             try {
                 protocol?.start()
-                setSpeed(1.0) // Разбудить дорожку
+                setSpeed(1.0)
                 if (waitForBeltRunning(0.9, 30000L)) workoutManager.resume()
             } finally {
                 isStartingBelt = false
@@ -520,10 +521,11 @@ class TreadmillSession(private val appContext: Context) {
         }
     }
 
+    // [DEBUGLOG] Все сообщения идут в единый хаб
     private fun addLog(line: String) {
-        val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-        _logs.value = (_logs.value + "[$ts] $line").takeLast(500)
+        DebugLog.d("SESSION", line)
     }
 
-    fun clearLogs() { _logs.value = emptyList() }
+    // [DEBUGLOG] Очистка теперь через хаб (чистит и память, и файл)
+    fun clearLogs() { DebugLog.clear() }
 }
