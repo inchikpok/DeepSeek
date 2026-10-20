@@ -1,5 +1,6 @@
 package com.custom.treadmill.ui.screens
 
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -23,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.custom.treadmill.DebugLog
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import java.text.SimpleDateFormat
@@ -64,7 +67,6 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     val logs by vm.logs.collectAsState()
     val treadmillState by vm.treadmillState.collectAsState()
     val treadmillName by vm.treadmillName.collectAsState()
-    val settings by vm.settings.collectAsState()
     val data by vm.treadmillData.collectAsState()
 
     val treadmillReady = treadmillState == BleConnectionState.READY
@@ -92,12 +94,11 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         try {
-            // [ФИКС] Передаем "FTMS" вместо удаленного settings.protocol
-            val content = buildLogContent(logs, treadmillState.toString(), "FTMS")
+            val content = DebugLog.exportText()
             ctx.contentResolver.openOutputStream(uri)?.use { os ->
                 os.write(content.toByteArray(Charsets.UTF_8))
             }
-            savedMessage = "Сохранено ${logs.size} записей"
+            savedMessage = "Сохранено ${logs.size} записей (с файлом)"
         } catch (e: Exception) {
             savedMessage = "Ошибка: ${e.message}"
         }
@@ -116,7 +117,10 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
                 Text("Debug", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Row {
-                    TextButton(onClick = { vm.clearLogs() }) { Text("Очистить") }
+                    TextButton(onClick = {
+                        DebugLog.d("UI", "Debug: Очистить лог")
+                        vm.clearLogs()
+                    }) { Text("Очистить") }
                     TextButton(onClick = {
                         val ts = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
                             .format(Date())
@@ -124,7 +128,21 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                     }) {
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Сохранить")
+                        Text("Save")
+                    }
+                    TextButton(onClick = {
+                        // [DEBUGLOG] Поделиться логом как текст (Telegram/Gmail/WhatsApp)
+                        val content = DebugLog.exportText()
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "Treadmill debug log")
+                            putExtra(Intent.EXTRA_TEXT, content)
+                        }
+                        ctx.startActivity(Intent.createChooser(intent, "Поделиться логом"))
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Share")
                     }
                 }
             }
@@ -148,13 +166,13 @@ fun DebugScreen(vm: MainViewModel, onBack: () -> Unit) {
                 Column(Modifier.padding(10.dp)) {
                     Text("Дорожка: ${treadmillName ?: "—"}", fontSize = 12.sp)
                     Text("Состояние: $treadmillState", fontSize = 12.sp)
-                    Text("Протокол: FTMS", fontSize = 12.sp) // [ФИКС] Убрали settings.protocol
+                    Text("Протокол: FTMS", fontSize = 12.sp)
                     Text(
                         "Скорость: %.1f · Наклон: %.0f%%".format(data.speedKmh, data.inclinePercent),
                         fontSize = 12.sp
                     )
                     Text(
-                        "Записей: ${logs.size} / 8000   (показано: ${visibleLogs.size})",
+                        "Записей: ${logs.size}   (показано: ${visibleLogs.size})",
                         fontSize = 12.sp
                     )
                 }
@@ -237,7 +255,7 @@ private fun LogView(logs: List<String>, listState: LazyListState, hideTreadmillF
     Card(modifier) {
         Column(Modifier.fillMaxSize().padding(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Лог BLE", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("Лог", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Скрыть кадры 2ACD", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(4.dp))
@@ -251,17 +269,26 @@ private fun LogView(logs: List<String>, listState: LazyListState, hideTreadmillF
                         line,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = when {
-                            line.contains("<-") -> Color(0xFF4CAF50)
-                            line.contains("->") -> Color(0xFF64B5F6)
-                            line.contains("FTMS:") -> Color(0xFFFFB300)
-                            else -> MaterialTheme.colorScheme.onSurface
-                        }
+                        color = lineColor(line)
                     )
                 }
             }
         }
     }
+}
+
+// [DEBUGLOG] Раскраска по тегам для быстрого сканирования
+private fun lineColor(line: String): Color = when {
+    line.contains("[ERR/") -> Color(0xFFE57373)         // красный — ошибки
+    line.contains("[UI]") -> Color(0xFF80DEEA)          // голубой — тапы/жесты
+    line.contains("[NAV]") -> Color(0xFFCE93D8)         // сиреневый — навигация
+    line.contains("[VM]") -> Color(0xFFFFB74D)          // оранжевый — методы VM
+    line.contains("[WM]") -> Color(0xFFBA68C8)          // фиолетовый — WorkoutManager
+    line.contains("[SVC]") -> Color(0xFF4DD0E1)         // бирюзовый — сервис
+    line.contains("<-") -> Color(0xFF4CAF50)            // зелёный — входящие BLE
+    line.contains("->") -> Color(0xFF64B5F6)            // синий — исходящие BLE
+    line.contains("[PROTO]") || line.contains("[SESSION]") -> Color(0xFFFFB300) // янтарный — протокол/сессия
+    else -> Color(0xFFBDBDBD)
 }
 
 private data class CmdEntry(val label: String, val hex: String, val note: String = "")
@@ -283,7 +310,7 @@ private fun buildCommandReference(): List<Pair<String, List<CmdEntry>>> {
             CmdEntry("Reset", "01", "Стандартный FTMS Reset"),
             CmdEntry("Start / Resume", "07", "Только ПОСЛЕ 00 + паузы"),
             CmdEntry("Stop (наш способ)", "02 00 00", "Скорость → 0"),
-            CmdEntry("Pause (стандарт FTMS)", "08 01", "На этом belt игнорируется")
+            CmdEntry("Pause (стандарт FTMS)", "08 01", "Сбрасывает таймер на дорожке")
         ),
         "Скорость — смена на ходу" to speedChange,
         "Наклон (целые %)" to inclineCmds
@@ -419,21 +446,5 @@ private fun CommandConstructor(treadmillReady: Boolean, onSend: (String) -> Unit
             }
         }
         Spacer(Modifier.height(12.dp))
-    }
-}
-
-private fun buildLogContent(logs: List<String>, state: String, protocol: String): String {
-    val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-    return buildString {
-        appendLine("=== Treadmill Debug Log ===")
-        appendLine("Дата: $now")
-        appendLine("Состояние дорожки: $state")
-        appendLine("Протокол: $protocol")
-        appendLine("Записей: ${logs.size}")
-        appendLine()
-        appendLine("--- Лог ---")
-        logs.forEach { appendLine(it) }
-        appendLine()
-        appendLine("=== Конец ===")
     }
 }
