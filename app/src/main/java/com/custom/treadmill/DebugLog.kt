@@ -12,18 +12,16 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 
-/**
- * Центральный хаб логирования.
- *
- * Пишет одновременно в:
- *  - StateFlow<List<String>> — для UI (DebugScreen)
- *  - Logcat (фильтр: TC.*)
- *  - Файл filesDir/logs/debug-YYYY-MM-DD.log — для экспорта
- *
- * Формат: [HH:mm:ss.SSS][TAG] сообщение
- *
- * Теги: SESSION, VM, UI, NAV, TR, HR, PROTO, WM, SVC, SYS, ERR/*
- */
+// Центральный хаб логирования.
+//
+// Пишет одновременно в:
+//   - StateFlow<List<String>> — для UI (DebugScreen)
+//   - Logcat (фильтр: TC.TAG)
+//   - Файл filesDir/logs/debug-YYYY-MM-DD.log — для экспорта
+//
+// Формат: [HH:mm:ss.SSS][TAG] сообщение
+//
+// Теги: SESSION, VM, UI, NAV, TR, HR, PROTO, WM, SVC, SYS, ERR-префикс
 object DebugLog {
 
     private const val MAX_LINES = 3000
@@ -36,6 +34,7 @@ object DebugLog {
     private val dayFmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
     private val writer = Executors.newSingleThreadExecutor()
+
     @Volatile private var logFile: File? = null
     @Volatile private var logDay: String? = null
     @Volatile private var initialized = false
