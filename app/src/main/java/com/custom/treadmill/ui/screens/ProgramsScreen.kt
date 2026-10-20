@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,6 +38,7 @@ import kotlin.math.roundToInt
 
 enum class SortMode { NAME_ASC, NAME_DESC, NEWEST }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProgramsScreen(
     mainVm: MainViewModel,
@@ -58,8 +62,8 @@ fun ProgramsScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var sortMode by rememberSaveable { mutableStateOf(SortMode.NAME_ASC) }
     var showNotConnectedDialog by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
 
-    // Общая валидация и импорт — используется и файлом, и буфером
     fun tryImportText(text: String, source: String) {
         try {
             if (text.isBlank()) {
@@ -77,10 +81,8 @@ fun ProgramsScreen(
             }
             programVm.save(data)
             mainVm.showMessage("Программа «${data.name}» импортирована ($source)")
-            DebugLog.d("VM", "import program '${data.name}' from $source, ${data.segments.size} segments")
         } catch (e: Exception) {
             mainVm.showMessage("Ошибка: ${e.message}")
-            DebugLog.e("VM", "import failed from $source", e)
         }
     }
 
@@ -94,7 +96,7 @@ fun ProgramsScreen(
                 os.write(programVm.exportJson(data).toByteArray(Charsets.UTF_8))
             }
         } catch (e: Exception) {
-            mainVm.showMessage("Ошибка сохранения файла: ${e.message}")
+            mainVm.showMessage("Ошибка сохранения: ${e.message}")
         }
     }
 
@@ -108,7 +110,7 @@ fun ProgramsScreen(
                 ?: return@rememberLauncherForActivityResult
             tryImportText(text, "файл")
         } catch (e: Exception) {
-            mainVm.showMessage("Ошибка чтения файла: ${e.message}")
+            mainVm.showMessage("Ошибка чтения: ${e.message}")
         }
     }
 
@@ -125,123 +127,122 @@ fun ProgramsScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Column(Modifier.padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (onBack != null) {
-                    TextButton(onClick = onBack, contentPadding = PaddingValues(4.dp)) { Text("← Назад") }
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text("Программы", fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            }
-            Spacer(Modifier.height(12.dp))
-
-            Button(
+    Scaffold(
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
                 onClick = { showTemplates = true },
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(vertical = 12.dp)
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("Создать") }
+            )
+        }
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // Верхняя панель
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Создать")
+                if (onBack != null) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                    }
+                } else {
+                    Spacer(Modifier.width(16.dp))
+                }
+                Text("Программы", fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.weight(1f))
+                
+                // Импорт
+                IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
+                    Icon(Icons.Outlined.FileUpload, contentDescription = "Импорт из файла")
+                }
+                // Из буфера
+                IconButton(onClick = {
+                    try {
+                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = cm.primaryClip
+                        if (clip == null || clip.itemCount == 0) mainVm.showMessage("Буфер пуст")
+                        else tryImportText(clip.getItemAt(0).coerceToText(ctx)?.toString() ?: "", "буфер")
+                    } catch (e: Exception) { mainVm.showMessage("Ошибка буфера: ${e.message}") }
+                }) {
+                    Icon(Icons.Outlined.ContentPaste, contentDescription = "Вставить из буфера")
+                }
             }
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 10.dp)
-                ) { Text("Импорт из файла", fontSize = 12.sp) }
-                OutlinedButton(
-                    onClick = {
-                        try {
-                            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = cm.primaryClip
-                            if (clip == null || clip.itemCount == 0) {
-                                mainVm.showMessage("Буфер обмена пуст")
-                                return@OutlinedButton
-                            }
-                            val text = clip.getItemAt(0).coerceToText(ctx)?.toString() ?: ""
-                            tryImportText(text, "буфер")
-                        } catch (e: Exception) {
-                            mainVm.showMessage("Ошибка буфера: ${e.message}")
+
+            // Поиск и сортировка
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Поиск...", fontSize = 14.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Close, contentDescription = "Очистить", modifier = Modifier.size(20.dp)) }
                         }
                     },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 10.dp)
-                ) { Text("Из буфера", fontSize = 12.sp) }
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Поиск по названию…") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Close, contentDescription = "Очистить") }
+                    singleLine = true,
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+                )
+                
+                Box {
+                    IconButton(
+                        onClick = { showSortMenu = true },
+                        modifier = Modifier.size(50.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Sort, contentDescription = "Сортировка", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Сортировка:", fontSize = 13.sp)
-                SortChip("A→Я", sortMode == SortMode.NAME_ASC) { sortMode = SortMode.NAME_ASC }
-                SortChip("Я→A", sortMode == SortMode.NAME_DESC) { sortMode = SortMode.NAME_DESC }
-                SortChip("Новые", sortMode == SortMode.NEWEST) { sortMode = SortMode.NEWEST }
+                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                        DropdownMenuItem(text = { Text("А-Я") }, onClick = { sortMode = SortMode.NAME_ASC; showSortMenu = false }, leadingIcon = { if (sortMode == SortMode.NAME_ASC) Icon(Icons.Default.Check, null) else Spacer(Modifier.size(24.dp)) })
+                        DropdownMenuItem(text = { Text("Я-А") }, onClick = { sortMode = SortMode.NAME_DESC; showSortMenu = false }, leadingIcon = { if (sortMode == SortMode.NAME_DESC) Icon(Icons.Default.Check, null) else Spacer(Modifier.size(24.dp)) })
+                        DropdownMenuItem(text = { Text("Сначала новые") }, onClick = { sortMode = SortMode.NEWEST; showSortMenu = false }, leadingIcon = { if (sortMode == SortMode.NEWEST) Icon(Icons.Default.Check, null) else Spacer(Modifier.size(24.dp)) })
+                    }
+                }
             }
 
             Spacer(Modifier.height(12.dp))
-        }
 
-        if (visible.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (programs.isEmpty()) "У вас пока нет программ" else "Ничего не найдено", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        if (programs.isEmpty()) "Нажмите «Создать», чтобы добавить первую,\nили «Из буфера», чтобы вставить из блокнота."
-                        else "Попробуйте изменить поиск",
-                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center
-                    )
+            // Список
+            if (visible.isEmpty()) {
+                Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.surfaceVariant)
+                        Spacer(Modifier.height(12.dp))
+                        Text(if (programs.isEmpty()) "Нет программ" else "Ничего не найдено", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (programs.isEmpty()) "Нажмите «Создать» или вставьте из буфера" else "Попробуйте изменить запрос",
+                            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center
+                        )
+                    }
                 }
-            }
-        } else {
-            LazyColumn(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 96.dp)) {
-                items(visible, key = { it.id }) { p ->
-                    val data = remember(p.id, p.segmentsJson) { programVm.toData(p) }
-                    ProgramCard(
-                        entity = p,
-                        data = data,
-                        canStart = treadmillReady,
-                        onEdit = { editingId = p.id; editingData = data },
-                        onDuplicate = {
-                            val copy = data.copy(name = "${data.name} (копия)")
-                            programVm.save(copy, 0L)
-                        },
-                        onDelete = {
-                            if (workoutState.running && workoutState.programName == p.name) {
-                                mainVm.showMessage("Нельзя удалить запущенную программу")
-                            } else {
-                                deleteTarget = p
-                            }
-                        },
-                        onExport = {
-                            exportTarget = data
-                            exportLauncher.launch("${p.name}.json")
-                        },
-                        onStart = {
-                            if (treadmillReady) onStartWorkout(data)
-                            else showNotConnectedDialog = true
-                        }
-                    )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp)
+                ) {
+                    items(visible, key = { it.id }) { p ->
+                        val data = remember(p.id, p.segmentsJson) { programVm.toData(p) }
+                        ProgramCardModern(
+                            entity = p,
+                            data = data,
+                            canStart = treadmillReady,
+                            onEdit = { editingId = p.id; editingData = data },
+                            onDuplicate = { programVm.save(data.copy(name = "${data.name} (копия)"), 0L) },
+                            onDelete = { 
+                                if (workoutState.running && workoutState.programName == p.name) mainVm.showMessage("Нельзя удалить запущенную программу")
+                                else deleteTarget = p 
+                            },
+                            onExport = { exportTarget = data; exportLauncher.launch("${p.name}.json") },
+                            onStart = { if (treadmillReady) onStartWorkout(data) else showNotConnectedDialog = true }
+                        )
+                    }
                 }
             }
         }
@@ -280,7 +281,7 @@ fun ProgramsScreen(
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text("Удалить программу?") },
-            text = { Text("Программа «${target.name}» будет удалена навсегда.") },
+            text = { Text("Программа «${target.name}» будет удалена.") },
             confirmButton = {
                 TextButton(onClick = { programVm.delete(target); deleteTarget = null }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Удалить") }
             },
@@ -299,20 +300,80 @@ fun ProgramsScreen(
                 editingData = null
                 editingId = -1L
             },
-            onDismiss = {
-                editingData = null
-                editingId = -1L
-            }
+            onDismiss = { editingData = null; editingId = -1L }
         )
     }
 }
 
+// 🎨 СОВРЕМЕННАЯ КАРТОЧКА
 @Composable
-private fun SortChip(text: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text(text, fontSize = 12.sp) }
-    } else {
-        OutlinedButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text(text, fontSize = 12.sp) }
+private fun ProgramCardModern(
+    entity: ProgramEntity, data: ProgramData, canStart: Boolean,
+    onEdit: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit, onExport: () -> Unit, onStart: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    val totalSec = data.segments.sumOf { it.durationSec }
+    val minutes = totalSec / 60
+    val durationText = if (minutes > 0) "$minutes мин" else "${totalSec % 60} с"
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    ) {
+        Row(
+            Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Левая часть: Инфо
+            Column(Modifier.weight(1f)) {
+                Text(entity.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (entity.description.isNotBlank()) {
+                    Text(entity.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    StatChip("${data.segments.size} сегм.")
+                    StatChip(durationText)
+                }
+            }
+
+            // Правая часть: Кнопки
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Кнопка Play
+                FilledIconButton(
+                    onClick = onStart,
+                    enabled = canStart,
+                    modifier = Modifier.size(44.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Старт")
+                }
+                
+                Spacer(Modifier.width(4.dp))
+                
+                // Меню три точки
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Меню")
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(text = { Text("Изменить") }, onClick = { showMenu = false; onEdit() }, leadingIcon = { Icon(Icons.Default.Edit, null) })
+                        DropdownMenuItem(text = { Text("Дублировать") }, onClick = { showMenu = false; onDuplicate() }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) })
+                        DropdownMenuItem(text = { Text("Экспорт в JSON") }, onClick = { showMenu = false; onExport() }, leadingIcon = { Icon(Icons.Default.Share, null) })
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("Удалить", color = MaterialTheme.colorScheme.error) }, onClick = { showMenu = false; onDelete() }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatChip(text: String) {
+    Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), shape = RoundedCornerShape(6.dp)) {
+        Text(text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -392,72 +453,19 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
     return listOf("Интервалы 4×3 мин" to intervals, "Пирамида (1-2-3-2-1)" to pyramid, "Горки 6×1 мин @ 6%" to hills, "Fartlek 20 мин" to fartlek)
 }
 
-@Composable
-private fun ProgramCard(
-    entity: ProgramEntity, data: ProgramData, canStart: Boolean,
-    onEdit: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit, onExport: () -> Unit, onStart: () -> Unit
-) {
-    val totalSec = data.segments.sumOf { it.durationSec }
-    val minutes = totalSec / 60
-    val seconds = totalSec % 60
-    val durationText = if (minutes > 0) "$minutes мин" else "$seconds с"
-
-    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
-                    Text(entity.name, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    if (entity.description.isNotBlank()) {
-                        Spacer(Modifier.height(3.dp))
-                        Text(entity.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                IconButton(onClick = onDuplicate, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Дублировать", tint = MaterialTheme.colorScheme.primary)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                StatChip("${data.segments.size} сегм.")
-                StatChip(durationText)
-            }
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = onStart, enabled = canStart, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 12.dp)) {
-                Text(if (canStart) "Старт" else "Дорожка не подключена", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 10.dp)) { Text("Изм.", maxLines = 1, fontSize = 13.sp) }
-                OutlinedButton(onClick = onExport, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 10.dp)) { Text("Экспорт", maxLines = 1, fontSize = 13.sp) }
-                OutlinedButton(onClick = onDelete, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 10.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Удал.", maxLines = 1, fontSize = 13.sp) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatChip(text: String) {
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(50)) {
-        Text(text, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
+// ==========================================
+// РЕДАКТОР (оставлен без изменений)
+// ==========================================
 private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProgramEditorScreen(
-    initial: ProgramData,
-    isNew: Boolean,
-    onShowMessage: (String) -> Unit,
-    onSave: (ProgramData) -> Unit,
-    onDismiss: () -> Unit
+    initial: ProgramData, isNew: Boolean, onShowMessage: (String) -> Unit, onSave: (ProgramData) -> Unit, onDismiss: () -> Unit
 ) {
     val segments = remember(initial) {
         mutableStateListOf<SegmentEdit>().apply {
-            initial.segments.forEach { s ->
-                add(SegmentEdit(s.name, s.durationSec, s.speedKmh, s.inclinePercent))
-            }
+            initial.segments.forEach { add(SegmentEdit(it.name, it.durationSec, it.speedKmh, it.inclinePercent)) }
             if (isEmpty()) add(SegmentEdit("Разминка", 300, 5.0, 0.0))
         }
     }
@@ -478,14 +486,8 @@ private fun ProgramEditorScreen(
                         navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = "Закрыть") } },
                         actions = {
                             TextButton(onClick = {
-                                if (name.isBlank()) {
-                                    onShowMessage("Введите название программы")
-                                    return@TextButton
-                                }
-                                if (segments.isEmpty() || segments.any { it.durationSec <= 0 || it.speedKmh <= 0 }) {
-                                    onShowMessage("Проверьте сегменты: время и скорость должны быть больше нуля")
-                                    return@TextButton
-                                }
+                                if (name.isBlank()) { onShowMessage("Введите название программы"); return@TextButton }
+                                if (segments.isEmpty() || segments.any { it.durationSec <= 0 || it.speedKmh <= 0 }) { onShowMessage("Проверьте сегменты: время и скорость должны быть больше нуля"); return@TextButton }
                                 onSave(ProgramData(name, description, segments.map { ProgramSegment(it.durationSec, it.speedKmh, it.inclinePercent, it.name.ifBlank { "Сегмент" }) }))
                             }) { Text("Сохранить", fontWeight = FontWeight.Bold) }
                         }
@@ -495,10 +497,7 @@ private fun ProgramEditorScreen(
                     Surface(shadowElevation = 8.dp) {
                         Box(Modifier.fillMaxWidth().padding(16.dp)) {
                             Button(
-                                onClick = {
-                                    val last = segments.lastOrNull()
-                                    segments.add(SegmentEdit("Сегмент ${segments.size + 1}", 60, last?.speedKmh ?: 5.0, last?.inclinePercent ?: 0.0))
-                                },
+                                onClick = { val last = segments.lastOrNull(); segments.add(SegmentEdit("Сегмент ${segments.size + 1}", 60, last?.speedKmh ?: 5.0, last?.inclinePercent ?: 0.0)) },
                                 modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null)
@@ -549,45 +548,25 @@ private fun SegmentEditor(
                     Icon(Icons.Default.Delete, contentDescription = "Удалить", modifier = Modifier.size(18.dp), tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-
             OutlinedTextField(value = seg.name, onValueChange = { onChange(seg.copy(name = it)) }, label = { Text("Название сегмента", fontSize = 12.sp) }, textStyle = MaterialTheme.typography.bodyMedium, singleLine = true, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(10.dp))
-
             val mins = seg.durationSec / 60
             val secs = seg.durationSec % 60
             val timeText = if (seg.durationSec >= 60) "${mins}м ${secs}с" else "${secs}с"
-
-            CompactSlider(
-                label = "Длительность", valueText = timeText, value = seg.durationSec.toFloat(),
-                valueRange = 10f..3600f, steps = 358,
-                onValueChange = { rawValue -> val rounded = (rawValue / 10).roundToInt() * 10; onChange(seg.copy(durationSec = rounded)) }
-            )
-
+            CompactSlider(label = "Длительность", valueText = timeText, value = seg.durationSec.toFloat(), valueRange = 10f..3600f, steps = 358,
+                onValueChange = { rawValue -> val rounded = (rawValue / 10).roundToInt() * 10; onChange(seg.copy(durationSec = rounded)) })
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
             val speedWhole = seg.speedKmh.toInt()
             val speedTenth = (seg.speedKmh * 10).roundToInt() % 10
-
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CompactSlider(
-                    label = "Скорость (целые)", valueText = "$speedWhole", value = speedWhole.toFloat(),
-                    valueRange = 1f..20f, steps = 18, modifier = Modifier.weight(1f),
-                    onValueChange = { rawValue -> val newWhole = rawValue.roundToInt(); val newSpeed = newWhole + (speedTenth / 10.0); onChange(seg.copy(speedKmh = newSpeed)) }
-                )
-                CompactSlider(
-                    label = "Десятые", valueText = ".$speedTenth", value = speedTenth.toFloat(),
-                    valueRange = 0f..9f, steps = 8, modifier = Modifier.weight(1f),
-                    onValueChange = { rawValue -> val newTenth = rawValue.roundToInt(); val newSpeed = speedWhole + (newTenth / 10.0); onChange(seg.copy(speedKmh = newSpeed)) }
-                )
+                CompactSlider(label = "Целые", valueText = "$speedWhole", value = speedWhole.toFloat(), valueRange = 1f..20f, steps = 18, modifier = Modifier.weight(1f),
+                    onValueChange = { rawValue -> val newWhole = rawValue.roundToInt(); val newSpeed = newWhole + (speedTenth / 10.0); onChange(seg.copy(speedKmh = newSpeed)) })
+                CompactSlider(label = "Дес.", valueText = ".$speedTenth", value = speedTenth.toFloat(), valueRange = 0f..9f, steps = 8, modifier = Modifier.weight(1f),
+                    onValueChange = { rawValue -> val newTenth = rawValue.roundToInt(); val newSpeed = speedWhole + (newTenth / 10.0); onChange(seg.copy(speedKmh = newSpeed)) })
             }
-
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
-            CompactSlider(
-                label = "Наклон", valueText = "${seg.inclinePercent.roundToInt()} %", value = seg.inclinePercent.toFloat(),
-                valueRange = 0f..15f, steps = 14,
-                onValueChange = { rawValue -> onChange(seg.copy(inclinePercent = rawValue.roundToInt().toDouble())) }
-            )
+            CompactSlider(label = "Наклон", valueText = "${seg.inclinePercent.roundToInt()} %", value = seg.inclinePercent.toFloat(), valueRange = 0f..15f, steps = 14,
+                onValueChange = { rawValue -> onChange(seg.copy(inclinePercent = rawValue.roundToInt().toDouble())) })
         }
     }
 }
