@@ -4,15 +4,18 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.FileUpload
@@ -23,13 +26,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.custom.treadmill.DebugLog
 import com.custom.treadmill.ble.BleConnectionState
 import com.custom.treadmill.data.database.ProgramData
 import com.custom.treadmill.data.database.ProgramEntity
@@ -69,17 +72,14 @@ fun ProgramsScreen(
     fun tryImportText(text: String, source: String) {
         try {
             if (text.isBlank()) {
-                mainVm.showMessage("Текст пуст")
-                return
+                mainVm.showMessage("Текст пуст"); return
             }
             val data = programVm.importJson(text)
             if (data.name.isBlank() || data.segments.isEmpty()) {
-                mainVm.showMessage("Ошибка: файл не содержит программы")
-                return
+                mainVm.showMessage("Ошибка: файл не содержит программы"); return
             }
             if (data.segments.any { it.durationSec <= 0 || it.speedKmh <= 0 }) {
-                mainVm.showMessage("Ошибка: найдены сегменты с нулевым временем или скоростью")
-                return
+                mainVm.showMessage("Ошибка: найдены сегменты с нулевым временем или скоростью"); return
             }
             programVm.save(data)
             mainVm.showMessage("Программа «${data.name}» импортирована ($source)")
@@ -119,9 +119,7 @@ fun ProgramsScreen(
     val visible = remember(programs, searchQuery, sortMode) {
         val q = searchQuery.trim().lowercase()
         val filtered = if (q.isEmpty()) programs
-        else programs.filter {
-            it.name.lowercase().contains(q) || it.description.lowercase().contains(q)
-        }
+        else programs.filter { it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
         when (sortMode) {
             SortMode.NAME_ASC -> filtered.sortedBy { it.name.lowercase() }
             SortMode.NAME_DESC -> filtered.sortedByDescending { it.name.lowercase() }
@@ -139,6 +137,7 @@ fun ProgramsScreen(
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            // Верхняя панель
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -151,7 +150,6 @@ fun ProgramsScreen(
                     Spacer(Modifier.width(16.dp))
                 }
                 Text("Программы", fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.weight(1f))
-                
                 IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
                     Icon(Icons.Outlined.FileUpload, contentDescription = "Импорт из файла")
                 }
@@ -167,6 +165,7 @@ fun ProgramsScreen(
                 }
             }
 
+            // Поиск и сортировка
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -205,6 +204,7 @@ fun ProgramsScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // Список
             if (visible.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -302,51 +302,60 @@ fun ProgramsScreen(
     }
 }
 
+// 🎨 СОВРЕМЕННАЯ РАСКРЫВАЮЩАЯСЯ КАРТОЧКА
 @Composable
 private fun ProgramCardModern(
     entity: ProgramEntity, data: ProgramData, canStart: Boolean,
     onEdit: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit, onExport: () -> Unit, onStart: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    
     val totalSec = data.segments.sumOf { it.durationSec }
     val minutes = totalSec / 60
     val durationText = if (minutes > 0) "$minutes мин" else "${totalSec % 60} с"
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
     ) {
-        Row(
-            Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(entity.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (entity.description.isNotBlank()) {
-                    Text(entity.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.fillMaxWidth()) {
+            // Основная часть
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(entity.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (entity.description.isNotBlank()) {
+                        Text(entity.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        StatChip("${data.segments.size} сегм.")
+                        StatChip(durationText)
+                    }
                 }
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StatChip("${data.segments.size} сегм.")
-                    StatChip(durationText)
-                }
-            }
+                
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = "Развернуть",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledIconButton(
                     onClick = onStart,
                     enabled = canStart,
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(40.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = "Старт")
                 }
                 
-                Spacer(Modifier.width(4.dp))
-                
                 Box {
-                    IconButton(onClick = { showMenu = true }) {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(40.dp)) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Меню")
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
@@ -355,6 +364,45 @@ private fun ProgramCardModern(
                         DropdownMenuItem(text = { Text("Экспорт в JSON") }, onClick = { showMenu = false; onExport() }, leadingIcon = { Icon(Icons.Default.Share, null) })
                         HorizontalDivider()
                         DropdownMenuItem(text = { Text("Удалить", color = MaterialTheme.colorScheme.error) }, onClick = { showMenu = false; onDelete() }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) })
+                    }
+                }
+            }
+
+            // 🚀 РАСКРЫВАЮЩИЙСЯ СПИСОК СЕГМЕНТОВ
+            AnimatedVisibility(visible = expanded) {
+                Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+                    HorizontalDivider(Modifier.padding(bottom = 8.dp))
+                    data.segments.forEachIndexed { i, seg ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${i + 1}.",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.width(24.dp)
+                            )
+                            Text(
+                                seg.name.ifBlank { "Сегмент" },
+                                fontSize = 13.sp,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            
+                            val m = seg.durationSec / 60
+                            val s = seg.durationSec % 60
+                            val timeStr = if (m > 0) "${m}м ${s}с" else "${s}с"
+                            
+                            Text(
+                                "$timeStr · %.1f км/ч · %.0f%%".format(seg.speedKmh, seg.inclinePercent),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                        }
                     }
                 }
             }
@@ -445,6 +493,9 @@ private fun buildTemplates(): List<Pair<String, ProgramData>> {
     return listOf("Интервалы 4×3 мин" to intervals, "Пирамида (1-2-3-2-1)" to pyramid, "Горки 6×1 мин @ 6%" to hills, "Fartlek 20 мин" to fartlek)
 }
 
+// ==========================================
+// РЕДАКТОР (Полностью переработан)
+// ==========================================
 private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -462,7 +513,7 @@ private fun ProgramEditorScreen(
     var description by remember(initial) { mutableStateOf(initial.description) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
                     TopAppBar(
@@ -486,7 +537,10 @@ private fun ProgramEditorScreen(
                     Surface(shadowElevation = 8.dp) {
                         Box(Modifier.fillMaxWidth().padding(16.dp)) {
                             Button(
-                                onClick = { val last = segments.lastOrNull(); segments.add(SegmentEdit("Сегмент ${segments.size + 1}", 60, last?.speedKmh ?: 5.0, last?.inclinePercent ?: 0.0)) },
+                                onClick = { 
+                                    val last = segments.lastOrNull()
+                                    segments.add(SegmentEdit("Сегмент ${segments.size + 1}", 60, last?.speedKmh ?: 5.0, last?.inclinePercent ?: 0.0)) 
+                                },
                                 modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null)
@@ -497,12 +551,32 @@ private fun ProgramEditorScreen(
                     }
                 }
             ) { padding ->
-                Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Название программы") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Описание (опционально)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(12.dp))
-                    LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+                Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+                    
+                    // Верхние поля
+                    OutlinedTextField(
+                        value = name, 
+                        onValueChange = { name = it }, 
+                        label = { Text("Название программы") }, 
+                        singleLine = true, 
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = description, 
+                        onValueChange = { description = it }, 
+                        label = { Text("Описание (опционально)") }, 
+                        singleLine = true, 
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    
+                    Spacer(Modifier.height(16.dp))
+                    Text("Сегменты тренировки", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Spacer(Modifier.height(8.dp))
+                    
+                    LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
                         itemsIndexed(segments) { index, seg ->
                             SegmentEditor(
                                 index = index, total = segments.size, seg = seg,
@@ -526,10 +600,27 @@ private fun SegmentEditor(
     index: Int, total: Int, seg: SegmentEdit,
     onChange: (SegmentEdit) -> Unit, onMoveUp: () -> Unit, onMoveDown: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit, canDelete: Boolean
 ) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))) {
-        Column(Modifier.padding(10.dp)) {
+    // Локальный стейт для строк, чтобы можно было стирать текст при вводе
+    var nameState by remember(seg) { mutableStateOf(seg.name) }
+    var durationState by remember(seg) { mutableStateOf(seg.durationSec.toString()) }
+    var speedState by remember(seg) { mutableStateOf(seg.speedKmh.toString()) }
+    var inclineState by remember(seg) { mutableStateOf(seg.inclinePercent.toString()) }
+
+    Card(
+        Modifier.fillMaxWidth(), 
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            // Шапка сегмента (номер + кнопки)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("#${index + 1}", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(24.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("${index + 1}", color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.weight(1f))
                 IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.ArrowUpward, contentDescription = "Вверх", modifier = Modifier.size(18.dp)) }
                 IconButton(onClick = onMoveDown, enabled = index < total - 1, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.ArrowDownward, contentDescription = "Вниз", modifier = Modifier.size(18.dp)) }
                 IconButton(onClick = onDuplicate, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.ContentCopy, contentDescription = "Копировать", modifier = Modifier.size(18.dp)) }
@@ -537,38 +628,70 @@ private fun SegmentEditor(
                     Icon(Icons.Default.Delete, contentDescription = "Удалить", modifier = Modifier.size(18.dp), tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            OutlinedTextField(value = seg.name, onValueChange = { onChange(seg.copy(name = it)) }, label = { Text("Название сегмента", fontSize = 12.sp) }, textStyle = MaterialTheme.typography.bodyMedium, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(10.dp))
-            val mins = seg.durationSec / 60
-            val secs = seg.durationSec % 60
-            val timeText = if (seg.durationSec >= 60) "${mins}м ${secs}с" else "${secs}с"
-            CompactSlider(label = "Длительность", valueText = timeText, value = seg.durationSec.toFloat(), valueRange = 10f..3600f, steps = 358,
-                onValueChange = { rawValue -> val rounded = (rawValue / 10).roundToInt() * 10; onChange(seg.copy(durationSec = rounded)) })
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            val speedWhole = seg.speedKmh.toInt()
-            val speedTenth = (seg.speedKmh * 10).roundToInt() % 10
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CompactSlider(label = "Целые", valueText = "$speedWhole", value = speedWhole.toFloat(), valueRange = 1f..20f, steps = 18, modifier = Modifier.weight(1f),
-                    onValueChange = { rawValue -> val newWhole = rawValue.roundToInt(); val newSpeed = newWhole + (speedTenth / 10.0); onChange(seg.copy(speedKmh = newSpeed)) })
-                CompactSlider(label = "Дес.", valueText = ".$speedTenth", value = speedTenth.toFloat(), valueRange = 0f..9f, steps = 8, modifier = Modifier.weight(1f),
-                    onValueChange = { rawValue -> val newTenth = rawValue.roundToInt(); val newSpeed = speedWhole + (newTenth / 10.0); onChange(seg.copy(speedKmh = newSpeed)) })
+            
+            // Название
+            OutlinedTextField(
+                value = nameState,
+                onValueChange = { nameState = it; onChange(seg.copy(name = it)) },
+                label = { Text("Название сегмента", fontSize = 12.sp) },
+                textStyle = MaterialTheme.typography.bodyMedium,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp)
+            )
+            
+            Spacer(Modifier.height(8.dp))
+            
+            // 🚀 НОВЫЙ КОМПАКТНЫЙ ВВОД ПАРАМЕТРОВ (без слайдеров)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Время (сек)
+                OutlinedTextField(
+                    value = durationState,
+                    onValueChange = { 
+                        durationState = it
+                        val v = it.toIntOrNull() ?: 0
+                        onChange(seg.copy(durationSec = v))
+                    },
+                    label = { Text("Сек.", fontSize = 11.sp) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.weight(1.2f),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                
+                // Скорость
+                OutlinedTextField(
+                    value = speedState,
+                    onValueChange = { 
+                        speedState = it
+                        val v = it.replace(',', '.').toDoubleOrNull() ?: 0.0
+                        onChange(seg.copy(speedKmh = v))
+                    },
+                    label = { Text("Км/ч", fontSize = 11.sp) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                
+                // Наклон
+                OutlinedTextField(
+                    value = inclineState,
+                    onValueChange = { 
+                        inclineState = it
+                        val v = it.replace(',', '.').toDoubleOrNull() ?: 0.0
+                        onChange(seg.copy(inclinePercent = v))
+                    },
+                    label = { Text("%", fontSize = 11.sp) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    shape = RoundedCornerShape(8.dp)
+                )
             }
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            CompactSlider(label = "Наклон", valueText = "${seg.inclinePercent.roundToInt()} %", value = seg.inclinePercent.toFloat(), valueRange = 0f..15f, steps = 14,
-                onValueChange = { rawValue -> onChange(seg.copy(inclinePercent = rawValue.roundToInt().toDouble())) })
         }
-    }
-}
-
-@Composable
-private fun CompactSlider(label: String, valueText: String, value: Float, valueRange: ClosedFloatingPointRange<Float>, steps: Int, modifier: Modifier = Modifier, onValueChange: (Float) -> Unit) {
-    Column(modifier.padding(vertical = 4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(6.dp)) {
-                Text(valueText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-            }
-        }
-        Slider(value = value, onValueChange = onValueChange, valueRange = valueRange, steps = steps, modifier = Modifier.height(24.dp))
     }
 }
