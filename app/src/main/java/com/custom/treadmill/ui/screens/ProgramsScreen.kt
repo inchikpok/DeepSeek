@@ -315,7 +315,7 @@ fun ProgramsScreen(
 }
 
 // ==========================================================
-//  ГРАФИК: Скорость цветом + Наклон пунктирными линиями
+//  ГРАФИК: Фиксированная шкала (Скорость 20 км/ч, Наклон 15%)
 // ==========================================================
 @Composable
 private fun WorkoutMiniChart(
@@ -324,8 +324,10 @@ private fun WorkoutMiniChart(
 ) {
     if (segments.isEmpty()) return
     val totalSec = segments.sumOf { it.durationSec }.coerceAtLeast(1)
-    val maxSpeed = segments.maxOfOrNull { it.speedKmh }?.coerceAtLeast(1.0) ?: 1.0
-    val maxIncline = segments.maxOfOrNull { it.inclinePercent }?.coerceAtLeast(1.0) ?: 1.0
+
+    // Жестко задаем максимумы для наглядности (как на реальной дорожке)
+    val maxSpeed = 20.0
+    val maxIncline = 15.0
 
     val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -349,7 +351,7 @@ private fun WorkoutMiniChart(
             val segW = (seg.durationSec.toFloat() / totalSec) * w
             val drawW = (segW - gap).coerceAtLeast(1f)
             
-            // 1. Рисуем столбик скорости (цвет зависит от скорости)
+            // 1. Рисуем столбик скорости
             val speedH = (seg.speedKmh.toFloat() / maxSpeed.toFloat()) * chartH * 0.9f
             val speedColor = when {
                 seg.speedKmh < 6.0 -> Color(0xFF29B6F6)  // Голубой
@@ -366,14 +368,13 @@ private fun WorkoutMiniChart(
                 cornerRadius = CornerRadius(2f, 2f)
             )
 
-            // 2. Рисуем наклон горизонтальной пунктирной линией
-            if (maxIncline > 0) {
+            // 2. Рисуем наклон (пунктир)
+            if (seg.inclinePercent > 0) {
                 val inclineH = (seg.inclinePercent.toFloat() / maxIncline.toFloat()) * chartH * 0.9f
                 val y = chartH - inclineH
                 val startX = currentX + gap/2
                 val endX = currentX + segW - gap/2
                 
-                // Линия наклона
                 val linePath = Path().apply {
                     moveTo(startX, y)
                     lineTo(endX, y)
@@ -381,7 +382,7 @@ private fun WorkoutMiniChart(
                 
                 drawPath(
                     path = linePath,
-                    color = Color(0xFFAB47BC).copy(alpha = 0.9f),
+                    color = Color(0xFFAB47BC),
                     style = Stroke(
                         width = 2.dp.toPx(),
                         cap = StrokeCap.Round,
@@ -413,7 +414,6 @@ private fun WorkoutMiniChart(
 
             val x = (m / totalMin) * w
             
-            // Корректировка отступа для текста
             val textX = when {
                 i == 0 -> x + 4.dp.toPx()
                 m >= totalMin -> x - 4.dp.toPx()
