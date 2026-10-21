@@ -40,6 +40,7 @@ object Routes {
     const val DEBUG = "debug"
     const val ABOUT = "about"
     const val PROFILES = "profiles"
+    const val TTS = "tts"
     const val PROGRAMS = "tab_programs"
     const val HISTORY = "tab_history"
     const val SETTINGS = "tab_settings"
@@ -70,7 +71,8 @@ fun AppNavHost() {
                 onOpenWorkout = { nav.navigate(Routes.WORKOUT) },
                 onOpenDebug = { nav.navigate(Routes.DEBUG) },
                 onOpenAbout = { nav.navigate(Routes.ABOUT) },
-                onOpenProfiles = { nav.navigate(Routes.PROFILES) }
+                onOpenProfiles = { nav.navigate(Routes.PROFILES) },
+                onOpenTts = { nav.navigate(Routes.TTS) }
             )
         }
         composable(Routes.WORKOUT) {
@@ -79,6 +81,7 @@ fun AppNavHost() {
         composable(Routes.DEBUG) { DebugScreen(vm = mainVm, onBack = { nav.popBackStack() }) }
         composable(Routes.ABOUT) { AboutScreen(onBack = { nav.popBackStack() }) }
         composable(Routes.PROFILES) { ProfilesScreen(vm = mainVm, onBack = { nav.popBackStack() }) }
+        composable(Routes.TTS) { TtsSettingsScreen(vm = mainVm, onBack = { nav.popBackStack() }) }
     }
 }
 
@@ -92,7 +95,8 @@ private fun MainTabs(
     onOpenWorkout: () -> Unit,
     onOpenDebug: () -> Unit,
     onOpenAbout: () -> Unit,
-    onOpenProfiles: () -> Unit
+    onOpenProfiles: () -> Unit,
+    onOpenTts: () -> Unit
 ) {
     val tabs = listOf(
         Tab("Главная", Icons.Default.Home),
@@ -151,7 +155,7 @@ private fun MainTabs(
                 2 -> HistoryScreen(programVm = programVm, onBack = null)
                 3 -> SettingsScreen(
                     vm = mainVm, onBack = null, onOpenDebug = onOpenDebug, onOpenAbout = onOpenAbout,
-                    onOpenProfiles = onOpenProfiles
+                    onOpenProfiles = onOpenProfiles, onOpenTts = onOpenTts
                 )
             }
         }
