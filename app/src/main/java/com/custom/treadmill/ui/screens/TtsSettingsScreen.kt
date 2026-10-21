@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -69,45 +70,100 @@ fun TtsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
             }
 
-            OutlinedTextField(
-                value = startTemplate,
-                onValueChange = { startTemplate = it },
-                label = { Text("Старт тренировки") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2
-            )
+            // СТАРТ
+            Column {
+                OutlinedTextField(
+                    value = startTemplate,
+                    onValueChange = { startTemplate = it },
+                    label = { Text("Старт тренировки") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                TextButton(
+                    onClick = { vm.testSpeak(startTemplate) },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Icon(Icons.Default.VolumeUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Прослушать", fontSize = 12.sp)
+                }
+            }
 
-            OutlinedTextField(
-                value = segmentTemplate,
-                onValueChange = { segmentTemplate = it },
-                label = { Text("Смена сегмента") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2
-            )
+            // СМЕНА СЕГМЕНТА
+            Column {
+                OutlinedTextField(
+                    value = segmentTemplate,
+                    onValueChange = { segmentTemplate = it },
+                    label = { Text("Смена сегмента") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                TextButton(
+                    onClick = { vm.testSpeak(segmentTemplate) },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Icon(Icons.Default.VolumeUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Прослушать", fontSize = 12.sp)
+                }
+            }
 
-            OutlinedTextField(
-                value = finishTemplate,
-                onValueChange = { finishTemplate = it },
-                label = { Text("Финиш тренировки") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2
-            )
+            // ФИНИШ
+            Column {
+                OutlinedTextField(
+                    value = finishTemplate,
+                    onValueChange = { finishTemplate = it },
+                    label = { Text("Финиш тренировки") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                TextButton(
+                    onClick = { vm.testSpeak(finishTemplate) },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Icon(Icons.Default.VolumeUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Прослушать", fontSize = 12.sp)
+                }
+            }
 
-            OutlinedTextField(
-                value = pauseText,
-                onValueChange = { pauseText = it },
-                label = { Text("Пауза") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+            // ПАУЗА
+            Column {
+                OutlinedTextField(
+                    value = pauseText,
+                    onValueChange = { pauseText = it },
+                    label = { Text("Пауза") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                TextButton(
+                    onClick = { vm.testSpeak(pauseText) },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Icon(Icons.Default.VolumeUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Прослушать", fontSize = 12.sp)
+                }
+            }
 
-            OutlinedTextField(
-                value = resumeText,
-                onValueChange = { resumeText = it },
-                label = { Text("Продолжение") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+            // ПРОДОЛЖЕНИЕ
+            Column {
+                OutlinedTextField(
+                    value = resumeText,
+                    onValueChange = { resumeText = it },
+                    label = { Text("Продолжение") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                TextButton(
+                    onClick = { vm.testSpeak(resumeText) },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Icon(Icons.Default.VolumeUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Прослушать", fontSize = 12.sp)
+                }
+            }
             
             TextButton(
                 onClick = {
