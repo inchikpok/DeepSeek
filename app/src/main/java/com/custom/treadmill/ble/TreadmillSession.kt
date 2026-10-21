@@ -509,11 +509,12 @@ class TreadmillSession(private val appContext: Context) {
     fun startTreadmill() {
         if (_treadmillState.value != BleConnectionState.READY) return
         val isResume = _isPaused.value
-        if (isResume) {
-            val text = settingsStore.settings.value.ttsResumeText
-            if (text.isNotBlank()) speak(text)
+        if (isResume) speak("Продолжаем")
+        if (!isResume) {
+            resetMetrics()
+            resetStats()
+            workoutLogSaved = false // <--- [ФИКС] Сброс флага для новой ручной тренировки
         }
-        if (!isResume) resetMetrics()
         val resumeSpeed = if (isResume) speedBeforePause else 0.0
         if (isResume && resumeSpeed > 0.5) _targetSpeed.value = resumeSpeed
 
