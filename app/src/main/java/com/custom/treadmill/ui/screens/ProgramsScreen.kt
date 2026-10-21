@@ -386,7 +386,7 @@ private fun WorkoutGeneratorDialog(
 }
 
 // ==========================================================
-//  ГРАФИК (без изменений)
+//  ГРАФИК
 // ==========================================================
 @Composable
 private fun WorkoutMiniChart(segments: List<ProgramSegment>, modifier: Modifier = Modifier) {
@@ -529,22 +529,38 @@ private fun StatChip(text: String) {
     }
 }
 
+// ==========================================================
+//  ДИАЛОГ ШАБЛОНОВ (ИСПРАВЛЕН)
+// ==========================================================
 @Composable
 private fun TemplatesDialog(onPick: (ProgramData?) -> Unit, onDismiss: () -> Unit) {
     val templates = remember { buildTemplates() }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Шаблон программы") },
+        title = { Text("Создать тренировку") },
         text = {
-            Column {
-                Text("Выберите готовый шаблон или начните с нуля.")
-                Spacer(Modifier.height(10.dp))
-                TextButton(onClick = { onPick(null) }, modifier = Modifier.fillMaxWidth()) { Text("Пустая (с нуля)") }
-                Spacer(Modifier.height(4.dp))
-                templates.forEach { (title, data) ->
-                    TextButton(onClick = { onPick(data) }, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(title, fontWeight = FontWeight.SemiBold)
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    Card(
+                        Modifier.fillMaxWidth().clickable { onPick(null) },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Пустая (с нуля)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                    }
+                }
+                
+                items(templates) { (title, data) ->
+                    Card(
+                        Modifier.fillMaxWidth().clickable { onPick(data) },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                            Spacer(Modifier.height(2.dp))
                             Text("${data.segments.size} сегм. · ${data.segments.sumOf { it.durationSec } / 60} мин", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -555,9 +571,62 @@ private fun TemplatesDialog(onPick: (ProgramData?) -> Unit, onDismiss: () -> Uni
     )
 }
 
+// ==========================================================
+//  ПОЛНЫЙ СПИСОК ШАБЛОНОВ (ВОССТАНОВЛЕН)
+// ==========================================================
 private fun buildTemplates(): List<Pair<String, ProgramData>> {
-    val intervals = ProgramData(name = "Интервалы 4×3 мин", description = "VO₂max: 4 быстрых отрезка по 3 минуты", segments = listOf(ProgramSegment(390, 9.5, 1.0, "Разминка"), ProgramSegment(195, 15.0, 1.0, "Интервал 1/4"), ProgramSegment(160, 8.5, 1.0, "Отдых")))
-    return listOf("Интервалы" to intervals)
+    val intervals = ProgramData(
+        name = "Интервалы 4×3 мин", description = "VO₂max: 4 быстрых отрезка по 3 минуты",
+        segments = listOf(
+            ProgramSegment(390, 9.5, 1.0, "Разминка: лёгкий бег"), ProgramSegment(30, 16.0, 1.0, "Разминка: ускорение"),
+            ProgramSegment(60, 8.0, 1.0, "Разминка: трусца"), ProgramSegment(120, 9.0, 1.0, "Разминка: спокойный бег"),
+            ProgramSegment(195, 15.0, 1.0, "Интервал 1/4"), ProgramSegment(160, 8.5, 1.0, "Отдых: трусца"),
+            ProgramSegment(195, 15.0, 1.0, "Интервал 2/4"), ProgramSegment(160, 8.5, 1.0, "Отдых: трусца"),
+            ProgramSegment(195, 15.0, 1.0, "Интервал 3/4"), ProgramSegment(160, 8.5, 1.0, "Отдых: трусца"),
+            ProgramSegment(195, 15.0, 1.0, "Интервал 4/4"), ProgramSegment(360, 9.0, 1.0, "Заминка: лёгкий бег"),
+            ProgramSegment(240, 5.0, 0.0, "Заминка: ходьба")
+        )
+    )
+    val pyramid = ProgramData(
+        name = "Пирамида", description = "1-2-3-2-1 мин с отдыхом",
+        segments = listOf(
+            ProgramSegment(300, 9.5, 1.0, "Разминка"), ProgramSegment(60, 12.0, 1.0, "Пирамида 1 мин"),
+            ProgramSegment(90, 8.5, 1.0, "Отдых"), ProgramSegment(120, 12.5, 1.0, "Пирамида 2 мин"),
+            ProgramSegment(90, 8.5, 1.0, "Отдых"), ProgramSegment(180, 13.0, 1.0, "Пирамида 3 мин"),
+            ProgramSegment(90, 8.5, 1.0, "Отдых"), ProgramSegment(120, 12.5, 1.0, "Пирамида 2 мин"),
+            ProgramSegment(90, 8.5, 1.0, "Отдых"), ProgramSegment(60, 12.0, 1.0, "Пирамида 1 мин"),
+            ProgramSegment(300, 9.0, 1.0, "Заминка")
+        )
+    )
+    val hills = ProgramData(
+        name = "Горки 6×1 мин", description = "6 минут работы в гору с отдыхом",
+        segments = listOf(
+            ProgramSegment(300, 9.5, 1.0, "Разминка"), ProgramSegment(60, 8.0, 1.0, "Разминка: трусца"),
+            ProgramSegment(60, 12.0, 6.0, "Горка 1/6"), ProgramSegment(100, 6.0, 6.0, "Отдых в горку"),
+            ProgramSegment(60, 12.0, 6.0, "Горка 2/6"), ProgramSegment(100, 6.0, 6.0, "Отдых в горку"),
+            ProgramSegment(60, 12.0, 6.0, "Горка 3/6"), ProgramSegment(100, 6.0, 6.0, "Отдых в горку"),
+            ProgramSegment(60, 12.0, 6.0, "Горка 4/6"), ProgramSegment(100, 6.0, 6.0, "Отдых в горку"),
+            ProgramSegment(60, 12.0, 6.0, "Горка 5/6"), ProgramSegment(100, 6.0, 6.0, "Отдых в горку"),
+            ProgramSegment(60, 12.0, 6.0, "Горка 6/6"), ProgramSegment(300, 9.0, 1.0, "Заминка")
+        )
+    )
+    val fartlek = ProgramData(
+        name = "Fartlek 20 мин", description = "Свободная игра скоростей",
+        segments = listOf(
+            ProgramSegment(300, 9.5, 1.0, "Разминка"), ProgramSegment(60, 14.0, 1.0, "Спринт"),
+            ProgramSegment(120, 9.0, 1.0, "Трусца"), ProgramSegment(90, 13.0, 1.0, "Темповый"),
+            ProgramSegment(120, 9.0, 1.0, "Трусца"), ProgramSegment(60, 15.0, 1.0, "Спринт"),
+            ProgramSegment(120, 9.0, 1.0, "Трусца"), ProgramSegment(90, 13.0, 1.0, "Темповый"),
+            ProgramSegment(120, 9.0, 1.0, "Трусца"), ProgramSegment(60, 15.0, 1.0, "Спринт"),
+            ProgramSegment(300, 9.0, 1.0, "Заминка")
+        )
+    )
+    return listOf(
+        "Интервалы 4×3 мин" to intervals, 
+        "Пирамида (1-2-3-2-1)" to pyramid, 
+        "Горки 6×1 мин @ 6%" to hills, 
+        "Fartlek 20 мин" to fartlek
+    )
 }
 
 private data class SegmentEdit(val name: String = "", val durationSec: Int = 60, val speedKmh: Double = 5.0, val inclinePercent: Double = 0.0)
