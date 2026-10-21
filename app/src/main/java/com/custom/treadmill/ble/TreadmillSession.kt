@@ -511,9 +511,11 @@ class TreadmillSession(private val appContext: Context) {
         val isResume = _isPaused.value
         if (isResume) speak("Продолжаем")
         if (!isResume) {
+            // [ФИКС] Очищаем состояние предыдущей программы, если она была
+            workoutManager.stop()
             resetMetrics()
             resetStats()
-            workoutLogSaved = false // <--- [ФИКС] Сброс флага для новой ручной тренировки
+            workoutLogSaved = false
         }
         val resumeSpeed = if (isResume) speedBeforePause else 0.0
         if (isResume && resumeSpeed > 0.5) _targetSpeed.value = resumeSpeed
@@ -678,7 +680,12 @@ class TreadmillSession(private val appContext: Context) {
     fun saveWorkoutLog() {
         if (workoutLogSaved) return
         val ws = workoutManager.state.value
-        val durationSec = if (ws.totalElapsedSec > 0) ws.totalElapsedSec else _uiElapsedSec.value
+        
+        // [ФИКС] Берем время программы, ТОЛЬКО если у нас реально есть активная программа.
+        // Иначе берем время ручной тренировки _uiElapsedSec.
+        val isProgram = ws.programName.isNotBlank()
+        val durationSec = if (isProgram && ws.totalElapsedSec > 0) ws.totalElapsedSec else _uiElapsedSec.value
+        
         if (durationSec <= 0) return
         workoutLogSaved = true
 
@@ -688,7 +695,8 @@ class TreadmillSession(private val appContext: Context) {
         scope.launch {
             repository.addLog(WorkoutLogEntity(
                 dateMillis = System.currentTimeMillis(),
-                programName = ws.programName.ifBlank { "Ручная тренировка" },
+                // Если это программа — берем ее имя, иначе "Ручная тренировка"
+                programName = if (isProgram) ws.programName else "Ручная тренировка",
                 durationSec = durationSec,
                 distanceKm = _uiDistanceKm.value,
                 calories = _uiCalories.value,
