@@ -7,21 +7,33 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.UUID
 
 enum class HrMode { TARGET, ZONE }
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
+enum class ExperienceLevel { BEGINNER, INTERMEDIATE, ADVANCED }
+
+@Serializable
+data class UserProfile(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "Мой профиль",
+    val weightKg: Double = 75.0,
+    val heightCm: Int = 175,
+    val age: Int = 30,
+    val isMale: Boolean = true,
+    val restingHr: Int = 60,
+    val level: ExperienceLevel = ExperienceLevel.BEGINNER
+)
 
 @Serializable
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val keepScreenOn: Boolean = true,
-    val ttsEnabled: Boolean = true, // [НОВОЕ] Голосовые подсказки
+    val ttsEnabled: Boolean = true,
     
-    // Профиль спортсмена
-    val weightKg: Double = 75.0,
-    val age: Int = 30,
-    val isMale: Boolean = true,
-    val restingHr: Int = 60,
+    // Профили
+    val profiles: List<UserProfile> = listOf(UserProfile()),
+    val activeProfileId: String = profiles.first().id,
 
     // Скорость и наклон
     val minSpeedKmh: Double = 1.0,
@@ -42,7 +54,10 @@ data class AppSettings(
     
     val autoMaxHr: Boolean = true,
     val maxHr: Int = 190
-)
+) {
+    val activeProfile: UserProfile
+        get() = profiles.find { it.id == activeProfileId } ?: profiles.firstOrNull() ?: UserProfile()
+}
 
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("treadmill_settings", Context.MODE_PRIVATE)
@@ -61,6 +76,29 @@ class SettingsStore(context: Context) {
         val s = transform(_settings.value)
         _settings.value = s
         prefs.edit().putString(KEY, json.encodeToString(s)).apply()
+    }
+
+    fun updateProfile(profile: UserProfile) {
+        update { s ->
+            val newList = s.profiles.map { if (it.id == profile.id) profile else it }
+            s.copy(profiles = newList)
+        }
+    }
+
+    fun addProfile(profile: UserProfile) {
+        update { s -> s.copy(profiles = s.profiles + profile) }
+    }
+
+    fun deleteProfile(id: String) {
+        update { s ->
+            val newList = s.profiles.filter { it.id != id }
+            val newActive = if (s.activeProfileId == id) (newList.firstOrNull()?.id ?: "") else s.activeProfileId
+            s.copy(profiles = newList.ifEmpty { listOf(UserProfile()) }, activeProfileId = newActive)
+        }
+    }
+
+    fun setActiveProfile(id: String) {
+        update { s -> s.copy(activeProfileId = id) }
     }
 
     companion object { private const val KEY = "settings_json" }
