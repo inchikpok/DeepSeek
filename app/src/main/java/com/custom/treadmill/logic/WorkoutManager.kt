@@ -22,7 +22,7 @@ data class WorkoutState(
     val currentSegmentName: String = "",
     val segmentElapsedSec: Int = 0,
     val segmentDurationSec: Int = 0,
-    val progressPercent: Int = 0 // [НОВОЕ] Прогресс в %
+    val progressPercent: Int = 0
 )
 
 class WorkoutManager {
@@ -110,7 +110,6 @@ class WorkoutManager {
         job?.cancel()
         job = null
 
-        // Считаем прогресс по индексу сегмента
         val newProgress = ((nextIndex.toFloat() / program.segments.size) * 100).toInt()
 
         _state.value = s.copy(
@@ -146,51 +145,63 @@ class WorkoutManager {
         job = scope.launch {
             val segments = program.segments
 
-            if (_state.value.segmentElapsedSec > 0 && _state.value.currentSegmentIndex < segments.size) {
-                val seg = segments[_state.value.currentSegmentIndex]
-                onSetSpeed(seg.speedKmh)
-                onSetIncline(seg.inclinePercent)
-            }
-
             var index = _state.value.currentSegmentIndex
             var totalElapsed = _state.value.totalElapsedSec
 
-            while (index < segments.size && isActive) {
-                val seg = segments[index]
-
+            // [ФИКС] Отправляем команды и обновляем state одним махом при старте / resume
+            if (index < segments.size) {
+                val firstSeg = segments[index]
                 if (_state.value.segmentElapsedSec == 0) {
-                    onSetSpeed(seg.speedKmh)
-                    onSetIncline(seg.inclinePercent)
+                    onSetSpeed(firstSeg.speedKmh)
+                    onSetIncline(firstSeg.inclinePercent)
                     val newProgress = ((index.toFloat() / segments.size) * 100).toInt()
                     _state.value = _state.value.copy(
                         currentSegmentIndex = index,
-                        currentSegmentName = seg.name.ifBlank { "Сегмент ${index + 1}" },
-                        segmentDurationSec = seg.durationSec,
+                        currentSegmentName = firstSeg.name.ifBlank { "Сегмент ${index + 1}" },
+                        segmentDurationSec = firstSeg.durationSec,
                         segmentElapsedSec = 0,
                         progressPercent = newProgress
                     )
+                } else {
+                    // Resume после паузы — переотправляем команды текущего сегмента
+                    onSetSpeed(firstSeg.speedKmh)
+                    onSetIncline(firstSeg.inclinePercent)
                 }
+            }
+
+            while (index < segments.size && isActive) {
+                val seg = segments[index]
 
                 var s = _state.value.segmentElapsedSec
                 while (s < seg.durationSec && isActive) {
                     delay(1000L)
                     s++
                     totalElapsed++
-                    
-                    // Прогресс: (пройденные сегменты + доля текущего) / всего
+
                     val currentProgress = ((index + (s.toFloat() / seg.durationSec.toFloat())) / segments.size * 100).toInt()
-                    
+
                     _state.value = _state.value.copy(
-                        segmentElapsedSec = s, 
+                        segmentElapsedSec = s,
                         totalElapsedSec = totalElapsed,
                         progressPercent = currentProgress
                     )
                 }
 
+                // [ФИКС] Переход: обновляем ВСЁ одним copy(), чтобы UI/TTS не увидели промежуточное состояние
                 if (s >= seg.durationSec) {
                     index++
                     if (index < segments.size) {
-                        _state.value = _state.value.copy(currentSegmentIndex = index, segmentElapsedSec = 0)
+                        val nextSeg = segments[index]
+                        onSetSpeed(nextSeg.speedKmh)
+                        onSetIncline(nextSeg.inclinePercent)
+                        val newProgress = ((index.toFloat() / segments.size) * 100).toInt()
+                        _state.value = _state.value.copy(
+                            currentSegmentIndex = index,
+                            currentSegmentName = nextSeg.name.ifBlank { "Сегмент ${index + 1}" },
+                            segmentDurationSec = nextSeg.durationSec,
+                            segmentElapsedSec = 0,
+                            progressPercent = newProgress
+                        )
                     }
                 }
             }
