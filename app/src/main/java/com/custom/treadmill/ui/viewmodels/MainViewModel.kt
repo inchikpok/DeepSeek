@@ -81,6 +81,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteProfile(id: String) = settingsStore.deleteProfile(id)
     fun setActiveProfile(id: String) = settingsStore.setActiveProfile(id)
 
+    // [TTS] Тестовая озвучка
+    fun testSpeak(template: String) {
+        val text = template
+            .replace("{name}", "Тестовая тренировка")
+            .replace("{segName}", "Разминка")
+            .replace("{i}", "2")
+            .replace("{n}", "5")
+            .replace("{speed}", "8.5")
+            .replace("{speed_text}", "8.5 километров в час")
+            .replace("{angle}", "3")
+            .replace("{angle_text}", "3 процента")
+            .replace("{dist}", "5.2")
+            .replace("{hr}", "140")
+        session.testSpeak(text)
+    }
+
     fun startScanTreadmill() { _scanMode.value = ScanMode.TREADMILL; session.startScanTreadmill() }
     fun startScanHeartRate() { _scanMode.value = ScanMode.HEART_RATE; session.startScanHeartRate() }
     fun stopScan() { _scanMode.value = ScanMode.NONE; session.stopScan() }
