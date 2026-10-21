@@ -190,10 +190,18 @@ class TreadmillSession(private val appContext: Context) {
             val n = idx + 1
             val spd = _targetSpeed.value
             val inc = _targetIncline.value
-            speak(
-                "Сегмент $n из $total: ${name.ifBlank { "Сегмент $n" }}, " +
-                "скорость ${fmtSpeed(spd)}, угол ${fmtAngle(inc)}"
-            )
+            val template = settingsStore.settings.value.ttsSegmentTemplate
+
+            val text = template
+                .replace("{i}", n.toString())
+                .replace("{n}", total.toString())
+                .replace("{segName}", name.ifBlank { "Сегмент $n" })
+                .replace("{speed}", "%.1f".format(spd))
+                .replace("{speed_text}", fmtSpeed(spd))
+                .replace("{angle}", inc.roundToInt().toString())
+                .replace("{angle_text}", fmtAngle(inc))
+
+            speak(text)
         }
     }
 
@@ -271,7 +279,6 @@ class TreadmillSession(private val appContext: Context) {
                 val d = _treadmillData.value
                 if (d.speedKmh < 0.3) continue
 
-                // Вес берем из АКТИВНОГО профиля
                 val weight = settingsStore.settings.value.activeProfile.weightKg
                 val met = if (d.speedKmh < 6.0) 1.0 + (d.speedKmh * 0.5) + (d.inclinePercent * 0.1)
                 else 1.0 + (d.speedKmh * 0.9) + (d.inclinePercent * 0.15)
@@ -497,7 +504,10 @@ class TreadmillSession(private val appContext: Context) {
     fun startTreadmill() {
         if (_treadmillState.value != BleConnectionState.READY) return
         val isResume = _isPaused.value
-        if (isResume) speak("Продолжаем")
+        if (isResume) {
+            val text = settingsStore.settings.value.ttsResumeText
+            if (text.isNotBlank()) speak(text)
+        }
         if (!isResume) resetMetrics()
         val resumeSpeed = if (isResume) speedBeforePause else 0.0
         if (isResume && resumeSpeed > 0.5) _targetSpeed.value = resumeSpeed
@@ -528,7 +538,8 @@ class TreadmillSession(private val appContext: Context) {
         _isPaused.value = true
         scope.launch { protocol?.stop() }
         _statusMessage.value = "Пауза"
-        speak("Пауза")
+        val text = settingsStore.settings.value.ttsPauseText
+        if (text.isNotBlank()) speak(text)
     }
 
     fun togglePauseTreadmill() {
@@ -583,7 +594,11 @@ class TreadmillSession(private val appContext: Context) {
                             showMessage("Тренировка завершена!")
 
                             val distStr = "%.1f".format(dist).replace(".", ",")
-                            speak("Тренировка завершена. Дистанция $distStr км, средний пульс $avgHr")
+                            val template = settingsStore.settings.value.ttsFinishTemplate
+                            val text = template
+                                .replace("{dist}", distStr)
+                                .replace("{hr}", avgHr.toString())
+                            speak(text)
                         }
                     )
 
@@ -591,11 +606,13 @@ class TreadmillSession(private val appContext: Context) {
                     if (first != null) {
                         val s = settingsStore.settings.value
                         val safeSpeed = first.speedKmh.coerceIn(s.minSpeedKmh, s.maxSpeedKmh)
-                        speak(
-                            "Тренировка «${program.name}» началась. " +
-                            "Сегмент 1: ${first.name.ifBlank { "Сегмент 1" }}, " +
-                            "скорость ${fmtSpeed(safeSpeed)}"
-                        )
+                        val template = s.ttsStartTemplate
+                        val text = template
+                            .replace("{name}", program.name)
+                            .replace("{segName}", first.name.ifBlank { "Сегмент 1" })
+                            .replace("{speed}", "%.1f".format(safeSpeed))
+                            .replace("{speed_text}", fmtSpeed(safeSpeed))
+                        speak(text)
                     }
                 }
             } finally {
@@ -607,11 +624,14 @@ class TreadmillSession(private val appContext: Context) {
     fun pauseWorkout() {
         workoutManager.pause()
         scope.launch { protocol?.stop() }
-        speak("Пауза")
+        val text = settingsStore.settings.value.ttsPauseText
+        if (text.isNotBlank()) speak(text)
     }
 
     fun resumeWorkout() {
-        speak("Продолжаем")
+        val text = settingsStore.settings.value.ttsResumeText
+        if (text.isNotBlank()) speak(text)
+        
         isStartingBelt = true
         scope.launch {
             try {
