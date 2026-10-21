@@ -29,7 +29,6 @@ data class UserProfile(
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val keepScreenOn: Boolean = true,
-    val ttsEnabled: Boolean = true,
     
     // Профили
     val profiles: List<UserProfile> = listOf(UserProfile()),
@@ -51,9 +50,16 @@ data class AppSettings(
     val thresholdLow: Int = 5,
     val intervalSec: Int = 30,
     val stepKmh: Double = 0.5,
-    
     val autoMaxHr: Boolean = true,
-    val maxHr: Int = 190
+    val maxHr: Int = 190,
+
+    // TTS (Голосовые подсказки)
+    val ttsEnabled: Boolean = true,
+    val ttsStartTemplate: String = "Тренировка «{name}» началась. Сегмент 1: {segName}, скорость {speed_text}",
+    val ttsSegmentTemplate: String = "Сегмент {i} из {n}: {segName}, скорость {speed_text}, угол {angle_text}",
+    val ttsFinishTemplate: String = "Тренировка завершена. Дистанция {dist} км, средний пульс {hr}",
+    val ttsPauseText: String = "Пауза",
+    val ttsResumeText: String = "Продолжаем"
 ) {
     val activeProfile: UserProfile
         get() = profiles.find { it.id == activeProfileId } ?: profiles.firstOrNull() ?: UserProfile()
