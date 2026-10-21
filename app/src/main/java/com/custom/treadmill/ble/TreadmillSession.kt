@@ -184,6 +184,11 @@ class TreadmillSession(private val appContext: Context) {
         addLog("TTS: $text")
     }
 
+    fun testSpeak(text: String) {
+        tts.speak(text)
+        addLog("TTS тест: $text")
+    }
+
     private fun speakSegmentChange(idx: Int, total: Int, name: String) {
         scope.launch {
             delay(150L)
