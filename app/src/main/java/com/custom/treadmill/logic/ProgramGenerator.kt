@@ -13,9 +13,6 @@ enum class WorkoutGoal(val title: String, val description: String) {
 }
 
 object ProgramGenerator {
-    /**
-     * @param intensityPercent от 70 до 130. 100 = базовый уровень профиля.
-     */
     fun generate(
         profile: UserProfile,
         goal: WorkoutGoal,
@@ -25,7 +22,6 @@ object ProgramGenerator {
         val segments = mutableListOf<ProgramSegment>()
         val bmi = profile.weightKg / ((profile.heightCm / 100.0) * (profile.heightCm / 100.0))
 
-        // 1. Штраф за высокий вес (защита суставов и аэробная способность)
         val bmiMult = when {
             bmi > 35 -> 0.65
             bmi > 30 -> 0.75
@@ -33,7 +29,6 @@ object ProgramGenerator {
             else -> 1.0
         }
 
-        // 2. База по уровню (значительная разница!)
         val levelJog = when (profile.level) {
             ExperienceLevel.BEGINNER -> 6.0
             ExperienceLevel.INTERMEDIATE -> 8.5
@@ -50,7 +45,6 @@ object ProgramGenerator {
             ExperienceLevel.ADVANCED -> 10.0
         }
 
-        // 3. Множитель от ползунка (0.7 … 1.3)
         val userMult = intensityPercent / 100.0
 
         val walkSpeed = (4.5 * bmiMult * userMult).coerceIn(3.0, 6.5).roundToTenth()
@@ -60,89 +54,72 @@ object ProgramGenerator {
 
         when (goal) {
             WorkoutGoal.WEIGHT_LOSS -> {
-                val warmup = minOf(durationMin / 4, 8)
-                val cooldown = minOf(durationMin / 5, 5)
-                val main = durationMin - warmup - cooldown
+                val warmupMin = (durationMin * 0.2).toInt().coerceIn(3, 10)
+                val cooldownMin = (durationMin * 0.15).toInt().coerceIn(3, 8)
+                val mainMin = durationMin - warmupMin - cooldownMin
 
-                segments.add(ProgramSegment(warmup * 60, walkSpeed, 0.0, "Разминка (Ходьба)"))
-
-                // Интервалы: чем выше уровень, тем длиннее рабочая фаза
-                val fastBlockMin = when (profile.level) {
-                    ExperienceLevel.BEGINNER -> 2
-                    ExperienceLevel.INTERMEDIATE -> 3
-                    ExperienceLevel.ADVANCED -> 4
-                }
-                val slowBlockMin = when (profile.level) {
-                    ExperienceLevel.BEGINNER -> 2
-                    ExperienceLevel.INTERMEDIATE -> 2
-                    ExperienceLevel.ADVANCED -> 1
-                }
-
-                var remaining = main
+                segments.add(ProgramSegment(warmupMin * 60, walkSpeed, 0.0, "Разминка (Ходьба)"))
+                
+                var remainingSec = mainMin * 60
                 var block = 1
-                while (remaining > 0) {
-                    val fast = minOf(fastBlockMin, remaining)
-                    if (fast > 0) {
-                        segments.add(ProgramSegment(fast * 60, jogSpeed, maxIncline * 0.7, "Ходьба в горку $block"))
-                        remaining -= fast
-                    }
-                    if (remaining <= 0) break
-                    val slow = minOf(slowBlockMin, remaining)
-                    segments.add(ProgramSegment(slow * 60, walkSpeed, 0.0, "Восстановление $block"))
-                    remaining -= slow
+                while (remainingSec > 0) {
+                    val fastSec = minOf(3 * 60, remainingSec) // 3 минуты в горку
+                    segments.add(ProgramSegment(fastSec, jogSpeed, maxIncline * 0.5, "Ходьба в горку $block"))
+                    remainingSec -= fastSec
+                    if (remainingSec <= 0) break
+                    
+                    val slowSec = minOf(2 * 60, remainingSec) // 2 минуты отдыха
+                    segments.add(ProgramSegment(slowSec, walkSpeed, 0.0, "Восстановление $block"))
+                    remainingSec -= slowSec
                     block++
                 }
-                segments.add(ProgramSegment(cooldown * 60, walkSpeed, 0.0, "Заминка"))
+                segments.add(ProgramSegment(cooldownMin * 60, walkSpeed, 0.0, "Заминка"))
             }
 
             WorkoutGoal.CARDIO -> {
-                val warmupWalk = minOf(durationMin / 6, 5)
-                val warmupJog = minOf(durationMin / 6, 5)
-                val cooldown = minOf(durationMin / 5, 5)
-                val main = durationMin - warmupWalk - warmupJog - cooldown
+                val warmupMin = (durationMin * 0.2).toInt().coerceIn(3, 10)
+                val cooldownMin = (durationMin * 0.15).toInt().coerceIn(3, 8)
+                val mainMin = durationMin - warmupMin - cooldownMin
 
-                segments.add(ProgramSegment(warmupWalk * 60, walkSpeed, 0.0, "Разминка (Ходьба)"))
-                segments.add(ProgramSegment(warmupJog * 60, jogSpeed, 0.0, "Разминка (Бег)"))
-                if (main > 0) {
-                    segments.add(ProgramSegment(main * 60, jogSpeed, maxIncline * 0.3, "Основной бег (Кардио)"))
+                segments.add(ProgramSegment(warmupMin * 60, walkSpeed, 0.0, "Разминка (Ходьба)"))
+                if (mainMin > 0) {
+                    segments.add(ProgramSegment(mainMin * 60, jogSpeed, maxIncline * 0.3, "Основной бег (Кардио)"))
                 }
-                segments.add(ProgramSegment(cooldown * 60, walkSpeed, 0.0, "Заминка"))
+                segments.add(ProgramSegment(cooldownMin * 60, walkSpeed, 0.0, "Заминка"))
             }
 
             WorkoutGoal.SPEED -> {
-                val warmup = minOf(durationMin / 4, 12)
-                val cooldown = minOf(durationMin / 5, 6)
-                val main = durationMin - warmup - cooldown
+                val warmupMin = (durationMin * 0.25).toInt().coerceIn(5, 15)
+                val cooldownMin = (durationMin * 0.15).toInt().coerceIn(3, 10)
+                val mainMin = durationMin - warmupMin - cooldownMin
 
-                segments.add(ProgramSegment((warmup - 2) * 60, jogSpeed, 0.0, "Разминка (Бег)"))
-                segments.add(ProgramSegment(60, runSpeed, 0.0, "Ускорение"))
-                segments.add(ProgramSegment(60, walkSpeed, 0.0, "Отдых"))
-
-                // Интервалы: чем выше уровень, тем длиннее быстрый отрезок и короче отдых
+                segments.add(ProgramSegment(warmupMin * 60, jogSpeed, 0.0, "Разминка (Бег)"))
+                
                 val fastSec = when (profile.level) {
                     ExperienceLevel.BEGINNER -> 30
-                    ExperienceLevel.INTERMEDIATE -> 45
-                    ExperienceLevel.ADVANCED -> 60
+                    ExperienceLevel.INTERMEDIATE -> 60
+                    ExperienceLevel.ADVANCED -> 90
                 }
                 val slowSec = when (profile.level) {
                     ExperienceLevel.BEGINNER -> 90
                     ExperienceLevel.INTERMEDIATE -> 60
-                    ExperienceLevel.ADVANCED -> 45
+                    ExperienceLevel.ADVANCED -> 60
                 }
 
-                var remaining = main
+                var remainingSec = mainMin * 60
                 var intNum = 1
-                while (remaining > 0) {
-                    val fast = minOf(fastSec, remaining)
+                while (remainingSec > 0) {
+                    val fast = minOf(fastSec, remainingSec)
                     segments.add(ProgramSegment(fast, runSpeed, maxIncline * 0.2, "Интервал $intNum"))
-                    remaining -= fast
-                    if (remaining <= 0) break
-                    val slow = minOf(slowSec, remaining)
-                    segments.add(ProgramSegment(slow, (jogSpeed * 0.9).roundToTenth(), 0.0, "Отдых $intNum"))
-                    remaining -= slow
+                    remainingSec -= fast
+                    if (remainingSec <= 0) break
+                    
+                    val slow = minOf(slowSec, remainingSec)
+                    segments.add(ProgramSegment(slow, (jogSpeed * 0.85).roundToTenth(), 0.0, "Отдых $intNum"))
+                    remainingSec -= slow
                     intNum++
                 }
-                segments.add(ProgramSegment(cooldown * 60, walkSpeed, 0.0, "Заминка"))
+                segments.add(ProgramSegment(cooldownMin * 60, walkSpeed, 0.0, "Заминка"))
             }
         }
 
