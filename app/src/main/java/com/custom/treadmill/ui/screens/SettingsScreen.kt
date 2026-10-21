@@ -18,12 +18,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.DirectionsRun
-import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,7 +46,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,7 +66,8 @@ fun SettingsScreen(
     onBack: (() -> Unit)? = null,
     onOpenDebug: (() -> Unit)? = null,
     onOpenAbout: (() -> Unit)? = null,
-    onOpenProfiles: (() -> Unit)? = null
+    onOpenProfiles: (() -> Unit)? = null,
+    onOpenTts: (() -> Unit)? = null
 ) {
     val settings by vm.settings.collectAsState()
     val calculatedMaxHr = HeartRateZoneCalculator.getEffectiveMaxHr(settings)
@@ -105,7 +104,7 @@ fun SettingsScreen(
 
             // ================= Внешний вид =================
             item {
-                SettingsGroup(title = "Внешний вид", icon = Icons.Outlined.Palette) {
+                SettingsGroup(title = "Внешний вид и звук", icon = Icons.Outlined.Palette) {
                     CompactEnumDropdown(
                         label = "Тема оформления",
                         current = settings.themeMode,
@@ -129,10 +128,20 @@ fun SettingsScreen(
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                     CompactSwitchRow(
                         title = "Голосовые подсказки",
-                        subtitle = "Смена сегментов, 10 секунд, старт и финиш",
+                        subtitle = "Смена сегментов, старт и финиш",
                         checked = settings.ttsEnabled,
                         onChange = { v -> vm.updateSettings { it.copy(ttsEnabled = v) } }
                     )
+                    
+                    if (settings.ttsEnabled && onOpenTts != null) {
+                        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                        CompactActionRow(
+                            icon = Icons.Outlined.RecordVoiceOver,
+                            title = "Настроить фразы",
+                            subtitle = "Изменить текст голосовых подсказок",
+                            onClick = onOpenTts
+                        )
+                    }
                 }
             }
 
