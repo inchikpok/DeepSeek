@@ -58,12 +58,11 @@ import java.util.Locale
 @Composable
 fun HistoryScreen(programVm: ProgramViewModel, onBack: (() -> Unit)? = null) {
     val logs by programVm.logs.collectAsState()
-    var tab by rememberSaveable { mutableStateOf(0) }   // 0=Список, 1=Статистика
+    var tab by rememberSaveable { mutableStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        // ---------- Шапка ----------
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -107,7 +106,6 @@ fun HistoryScreen(programVm: ProgramViewModel, onBack: (() -> Unit)? = null) {
             }
         }
 
-        // ---------- Вкладки ----------
         Row(
             Modifier
                 .fillMaxWidth()
@@ -118,7 +116,6 @@ fun HistoryScreen(programVm: ProgramViewModel, onBack: (() -> Unit)? = null) {
             TabChip("Статистика", tab == 1) { tab = 1 }
         }
 
-        // ---------- Контент ----------
         if (logs.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -211,10 +208,10 @@ private fun StatsView(logs: List<WorkoutLogEntity>) {
         logs.filter { it.avgHeartRate > 0 }.sortedBy { it.dateMillis }
     }
 
-    // Получаем настройки и рассчитываем зоны
     val settings = TreadmillApp.instance.settingsStore.settings.value
     val maxHr = HeartRateZoneCalculator.getEffectiveMaxHr(settings)
-    val zoneBounds = HeartRateZoneCalculator.getZoneBounds(maxHr, settings.restingHr)
+    // Берем пульс покоя из активного профиля
+    val zoneBounds = HeartRateZoneCalculator.getZoneBounds(maxHr, settings.activeProfile.restingHr)
 
     Column(
         Modifier
@@ -249,14 +246,14 @@ private fun StatsView(logs: List<WorkoutLogEntity>) {
             title = "Средний пульс по тренировкам",
             subtitle = "${withHr.size} тренировок",
             points = withHr.map { HrPoint(it.dateMillis, it.avgHeartRate) },
-            zoneBounds = zoneBounds // <--- Передаем зоны
+            zoneBounds = zoneBounds
         )
         Spacer(Modifier.height(12.dp))
         ChartCard(
             title = "Максимальный пульс по тренировкам",
             subtitle = "Пик за тренировку",
             points = withHr.map { HrPoint(it.dateMillis, it.maxHeartRate) },
-            zoneBounds = zoneBounds // <--- Передаем зоны
+            zoneBounds = zoneBounds
         )
         Spacer(Modifier.height(20.dp))
     }
@@ -372,7 +369,7 @@ private fun ChartCard(
     title: String,
     subtitle: String,
     points: List<HrPoint>,
-    zoneBounds: List<Int> // <--- Обновленный параметр
+    zoneBounds: List<Int>
 ) {
     Card(
         Modifier.fillMaxWidth(),
@@ -391,7 +388,7 @@ private fun ChartCard(
             HeartRateChart(
                 points = points,
                 targetHr = 0,
-                zoneBounds = zoneBounds, // <--- Передаем зоны в график
+                zoneBounds = zoneBounds,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp)
