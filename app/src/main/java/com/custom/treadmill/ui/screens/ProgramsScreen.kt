@@ -267,8 +267,8 @@ fun ProgramsScreen(
     if (showGenerator) {
         WorkoutGeneratorDialog(
             profile = settings.activeProfile,
-            onGenerate = { goal, duration ->
-                val program = ProgramGenerator.generate(settings.activeProfile, goal, duration)
+            onGenerate = { goal, duration, intensity ->
+                val program = ProgramGenerator.generate(settings.activeProfile, goal, duration, intensity)
                 programVm.save(program)
                 mainVm.showMessage("Программа сгенерирована и сохранена!")
                 showGenerator = false
@@ -324,21 +324,27 @@ fun ProgramsScreen(
 }
 
 @Composable
-private fun WorkoutGeneratorDialog(profile: com.custom.treadmill.data.repository.UserProfile, onGenerate: (WorkoutGoal, Int) -> Unit, onDismiss: () -> Unit) {
+private fun WorkoutGeneratorDialog(
+    profile: com.custom.treadmill.data.repository.UserProfile,
+    onGenerate: (WorkoutGoal, Int, Int) -> Unit,
+    onDismiss: () -> Unit
+) {
     var goal by remember { mutableStateOf(WorkoutGoal.WEIGHT_LOSS) }
     var duration by remember { mutableFloatStateOf(30f) }
+    var intensity by remember { mutableFloatStateOf(100f) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Генератор тренировок", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Профиль: ${profile.name} (${profile.weightKg} кг, ${profile.age} лет)", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Профиль: ${profile.name} (${profile.weightKg} кг, ${profile.age} лет)",
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
                 Text("Цель:", fontWeight = FontWeight.SemiBold)
                 WorkoutGoal.values().forEach { g ->
                     Row(
-                        Modifier.fillMaxWidth().clickable { goal = g }.padding(vertical = 4.dp),
+                        Modifier.fillMaxWidth().clickable { goal = g }.padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = goal == g, onClick = { goal = g })
@@ -349,16 +355,27 @@ private fun WorkoutGeneratorDialog(profile: com.custom.treadmill.data.repository
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 Text("Длительность: ${duration.toInt()} мин", fontWeight = FontWeight.SemiBold)
                 Slider(
                     value = duration, onValueChange = { duration = it },
                     valueRange = 20f..60f, steps = 7
                 )
+
+                Spacer(Modifier.height(4.dp))
+                Text("Интенсивность: ${intensity.toInt()}%", fontWeight = FontWeight.SemiBold)
+                Slider(
+                    value = intensity, onValueChange = { intensity = it },
+                    valueRange = 70f..130f, steps = 11
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Легко", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Максимум", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onGenerate(goal, duration.toInt()) }) {
+            Button(onClick = { onGenerate(goal, duration.toInt(), intensity.toInt()) }) {
                 Icon(Icons.Default.AutoFixHigh, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Создать")
@@ -368,6 +385,9 @@ private fun WorkoutGeneratorDialog(profile: com.custom.treadmill.data.repository
     )
 }
 
+// ==========================================================
+//  ГРАФИК (без изменений)
+// ==========================================================
 @Composable
 private fun WorkoutMiniChart(segments: List<ProgramSegment>, modifier: Modifier = Modifier) {
     if (segments.isEmpty()) return
