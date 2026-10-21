@@ -67,7 +67,8 @@ fun SettingsScreen(
     vm: MainViewModel,
     onBack: (() -> Unit)? = null,
     onOpenDebug: (() -> Unit)? = null,
-    onOpenAbout: (() -> Unit)? = null
+    onOpenAbout: (() -> Unit)? = null,
+    onOpenProfiles: (() -> Unit)? = null
 ) {
     val settings by vm.settings.collectAsState()
     val calculatedMaxHr = HeartRateZoneCalculator.getEffectiveMaxHr(settings)
@@ -90,69 +91,15 @@ fun SettingsScreen(
                 }
             }
 
-            // ================= ПРОФИЛЬ СПОРТСМЕНА =================
+            // ================= ПРОФИЛИ =================
             item {
-                SettingsGroup(title = "Профиль спортсмена", icon = Icons.Outlined.Person) {
-                    var expanded by rememberSaveable { mutableStateOf(false) }
-                    
-                    ListItem(
-                        headlineContent = { Text("Параметры профиля", fontSize = 15.sp) },
-                        supportingContent = { 
-                            Text(
-                                if (expanded) "Нажмите, чтобы свернуть" else "Возраст, вес, пол, пульс покоя", 
-                                fontSize = 12.sp, 
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            ) 
-                        },
-                        trailingContent = { 
-                            Icon(
-                                if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, 
-                                contentDescription = null
-                            ) 
-                        },
-                        modifier = Modifier.clickable { expanded = !expanded },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                SettingsGroup(title = "Спортсмены", icon = Icons.Outlined.Person) {
+                    CompactActionRow(
+                        icon = Icons.Outlined.Person,
+                        title = "Профили тренировок",
+                        subtitle = "Текущий: ${settings.activeProfile.name} (${settings.activeProfile.weightKg} кг)",
+                        onClick = { onOpenProfiles?.invoke() }
                     )
-                    
-                    AnimatedVisibility(visible = expanded) {
-                        Column {
-                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                            CompactSliderSetting(
-                                label = "Вес",
-                                value = settings.weightKg.toFloat(),
-                                valueRange = 40f..150f,
-                                steps = 109,
-                                display = { "${it.roundToInt()} кг" },
-                                onValueChange = { v -> vm.updateSettings { it.copy(weightKg = v.roundToInt().toDouble()) } }
-                            )
-                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                            CompactSliderSetting(
-                                label = "Возраст",
-                                value = settings.age.toFloat(),
-                                valueRange = 10f..90f,
-                                steps = 79,
-                                display = { "${it.roundToInt()} лет" },
-                                onValueChange = { v -> vm.updateSettings { it.copy(age = v.roundToInt()) } }
-                            )
-                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                            CompactEnumDropdown(
-                                label = "Пол (для расчета пульса)",
-                                current = settings.isMale,
-                                options = listOf(true, false),
-                                optionLabel = { if (it) "Мужской" else "Женский" },
-                                onSelect = { v -> vm.updateSettings { it.copy(isMale = v) } }
-                            )
-                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                            CompactSliderSetting(
-                                label = "Пульс в покое",
-                                value = settings.restingHr.toFloat(),
-                                valueRange = 40f..100f,
-                                steps = 59,
-                                display = { "${it.roundToInt()} уд/мин" },
-                                onValueChange = { v -> vm.updateSettings { it.copy(restingHr = v.roundToInt()) } }
-                            )
-                        }
-                    }
                 }
             }
 
@@ -374,10 +321,6 @@ fun SettingsScreen(
         }
     }
 }
-
-// ================================================================
-//  Современные компактные компоненты
-// ================================================================
 
 @Composable
 private fun SettingsGroup(title: String, icon: ImageVector, content: @Composable () -> Unit) {
