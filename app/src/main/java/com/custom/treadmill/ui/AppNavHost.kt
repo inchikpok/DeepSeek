@@ -29,13 +29,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.custom.treadmill.DebugLog
-import com.custom.treadmill.ui.screens.AboutScreen
-import com.custom.treadmill.ui.screens.DebugScreen
-import com.custom.treadmill.ui.screens.HistoryScreen
-import com.custom.treadmill.ui.screens.MainScreen
-import com.custom.treadmill.ui.screens.ProgramsScreen
-import com.custom.treadmill.ui.screens.SettingsScreen
-import com.custom.treadmill.ui.screens.WorkoutScreen
+import com.custom.treadmill.ui.screens.*
 import com.custom.treadmill.ui.viewmodels.MainViewModel
 import com.custom.treadmill.ui.viewmodels.ProgramViewModel
 import kotlinx.coroutines.launch
@@ -45,6 +39,7 @@ object Routes {
     const val WORKOUT = "workout"
     const val DEBUG = "debug"
     const val ABOUT = "about"
+    const val PROFILES = "profiles"
     const val PROGRAMS = "tab_programs"
     const val HISTORY = "tab_history"
     const val SETTINGS = "tab_settings"
@@ -74,18 +69,16 @@ fun AppNavHost() {
                 programVm = programVm,
                 onOpenWorkout = { nav.navigate(Routes.WORKOUT) },
                 onOpenDebug = { nav.navigate(Routes.DEBUG) },
-                onOpenAbout = { nav.navigate(Routes.ABOUT) }
+                onOpenAbout = { nav.navigate(Routes.ABOUT) },
+                onOpenProfiles = { nav.navigate(Routes.PROFILES) }
             )
         }
         composable(Routes.WORKOUT) {
-            WorkoutScreen(
-                vm = mainVm,
-                onBack = { nav.popBackStack() },
-                onOpenDebug = { nav.navigate(Routes.DEBUG) }
-            )
+            WorkoutScreen(vm = mainVm, onBack = { nav.popBackStack() }, onOpenDebug = { nav.navigate(Routes.DEBUG) })
         }
         composable(Routes.DEBUG) { DebugScreen(vm = mainVm, onBack = { nav.popBackStack() }) }
         composable(Routes.ABOUT) { AboutScreen(onBack = { nav.popBackStack() }) }
+        composable(Routes.PROFILES) { ProfilesScreen(vm = mainVm, onBack = { nav.popBackStack() }) }
     }
 }
 
@@ -99,6 +92,7 @@ private fun MainTabs(
     onOpenWorkout: () -> Unit,
     onOpenDebug: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenProfiles: () -> Unit
 ) {
     val tabs = listOf(
         Tab("Главная", Icons.Default.Home),
@@ -117,7 +111,6 @@ private fun MainTabs(
                         selected = pagerState.currentPage == index,
                         onClick = {
                             DebugLog.d("NAV", "tab tap: ${tab.title}")
-                            // 🚀 ИСПОЛЬЗУЕМ scrollToPage ВМЕСТО animateScrollToPage (мгновенный переход)
                             scope.launch { pagerState.scrollToPage(index) }
                         },
                         icon = { Icon(tab.icon, contentDescription = tab.title) },
@@ -136,10 +129,7 @@ private fun MainTabs(
             }
         }
     ) { padding ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize().padding(padding)
-        ) { page ->
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize().padding(padding)) { page ->
             when (page) {
                 0 -> MainScreen(
                     vm = mainVm,
@@ -155,17 +145,13 @@ private fun MainTabs(
                     }
                 )
                 1 -> ProgramsScreen(
-                    mainVm = mainVm,
-                    programVm = programVm,
-                    onBack = null,
+                    mainVm = mainVm, programVm = programVm, onBack = null,
                     onStartWorkout = { mainVm.startWorkout(it); onOpenWorkout() }
                 )
                 2 -> HistoryScreen(programVm = programVm, onBack = null)
                 3 -> SettingsScreen(
-                    vm = mainVm,
-                    onBack = null,
-                    onOpenDebug = onOpenDebug,
-                    onOpenAbout = onOpenAbout
+                    vm = mainVm, onBack = null, onOpenDebug = onOpenDebug, onOpenAbout = onOpenAbout,
+                    onOpenProfiles = onOpenProfiles
                 )
             }
         }
