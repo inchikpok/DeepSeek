@@ -109,7 +109,6 @@ class TreadmillSession(private val appContext: Context) {
     private var speedSum = 0.0; private var speedCount = 0L
     private var workoutLogSaved = false
 
-    // [TTS] и [AUTO-HR]
     private val tts: TtsManager get() = (appContext as TreadmillApp).ttsManager
     private var lastAutoHrEnabled: Boolean = false
     private var lastSpokenSegmentIndex: Int = -1
@@ -149,7 +148,6 @@ class TreadmillSession(private val appContext: Context) {
             }
         }
 
-        // [AUTO-HR] Автостарт/автостоп цикла при переключении свитча
         scope.launch {
             settingsStore.settings.collect { s ->
                 if (s.hrEnabled != lastAutoHrEnabled) {
@@ -159,7 +157,6 @@ class TreadmillSession(private val appContext: Context) {
             }
         }
 
-        // [TTS] Озвучка смены сегмента (стартовое сообщение даёт startWorkout())
         scope.launch {
             workoutManager.state.collect { ws ->
                 if (!ws.running) {
@@ -169,7 +166,6 @@ class TreadmillSession(private val appContext: Context) {
                 if (ws.paused) return@collect
                 val idx = ws.currentSegmentIndex
                 if (idx == lastSpokenSegmentIndex) return@collect
-                // Сегмент 1 уже озвучен из startWorkout() — не дублируем
                 if (idx == 0 && lastSpokenSegmentIndex == -1) {
                     lastSpokenSegmentIndex = 0
                     return@collect
@@ -182,10 +178,6 @@ class TreadmillSession(private val appContext: Context) {
         startMetricsLoop()
     }
 
-    // ===================================================================
-    //  TTS хелперы
-    // ===================================================================
-
     private fun speak(text: String) {
         if (!settingsStore.settings.value.ttsEnabled) return
         tts.speak(text)
@@ -194,8 +186,6 @@ class TreadmillSession(private val appContext: Context) {
 
     private fun speakSegmentChange(idx: Int, total: Int, name: String) {
         scope.launch {
-            // Небольшая задержка: пусть onSetSpeed/onSetIncline в WorkoutManager
-            // успеют обновить _targetSpeed/_targetIncline перед озвучкой.
             delay(150L)
             val n = idx + 1
             val spd = _targetSpeed.value
@@ -229,10 +219,6 @@ class TreadmillSession(private val appContext: Context) {
         return "$n $word"
     }
 
-    // ===================================================================
-    //  Auto-HR цикл
-    // ===================================================================
-
     private fun restartAutoHrLoop() {
         autoHrJob?.cancel()
         autoHrJob = null
@@ -254,7 +240,6 @@ class TreadmillSession(private val appContext: Context) {
                 if (!s2.hrEnabled) break
                 if (_treadmillState.value != BleConnectionState.READY) break
 
-                // Не мешаем программе и ручной паузе
                 val ws = workoutManager.state.value
                 if (ws.running || ws.paused) continue
                 if (_isPaused.value) continue
@@ -286,7 +271,8 @@ class TreadmillSession(private val appContext: Context) {
                 val d = _treadmillData.value
                 if (d.speedKmh < 0.3) continue
 
-                val weight = settingsStore.settings.value.weightKg
+                // Вес берем из АКТИВНОГО профиля
+                val weight = settingsStore.settings.value.activeProfile.weightKg
                 val met = if (d.speedKmh < 6.0) 1.0 + (d.speedKmh * 0.5) + (d.inclinePercent * 0.1)
                 else 1.0 + (d.speedKmh * 0.9) + (d.inclinePercent * 0.15)
                 val kcalPerMin = (met * 3.5 * weight) / 200.0
@@ -563,7 +549,7 @@ class TreadmillSession(private val appContext: Context) {
         resetMetrics()
         workoutLogSaved = false
         _isPaused.value = false
-        lastSpokenSegmentIndex = 0  // «Сегмент 1» озвучим сами
+        lastSpokenSegmentIndex = 0
 
         isStartingBelt = true
         scope.launch {
@@ -588,7 +574,6 @@ class TreadmillSession(private val appContext: Context) {
                             protocol?.setIncline(safe)
                         },
                         onFinish = {
-                            // Считаем ДО saveWorkoutLog(), иначе hrSum/hrCount обнулятся
                             val avgHr = if (hrCount > 0) (hrSum / hrCount).toInt() else 0
                             val dist = _uiDistanceKm.value
 
