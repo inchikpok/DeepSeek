@@ -48,7 +48,6 @@ fun WorkoutScreen(
     val treadmillReady = treadmillState == BleConnectionState.READY
     val speedStep = settings.speedStepKmh
 
-    // Состояние для диалога выхода
     var showExitConfirm by remember { mutableStateOf(false) }
 
     val view = LocalView.current
@@ -58,12 +57,12 @@ fun WorkoutScreen(
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-        val targetHr = if (settings.hrMode == HrMode.TARGET) settings.targetHr
+    val targetHr = if (settings.hrMode == HrMode.TARGET) settings.targetHr
                    else (settings.zoneMin + settings.zoneMax) / 2
 
-    // Рассчитываем актуальные зоны пульса
+    // Берем restingHr из активного профиля
     val maxHr = HeartRateZoneCalculator.getEffectiveMaxHr(settings)
-    val zoneBounds = HeartRateZoneCalculator.getZoneBounds(maxHr, settings.restingHr)
+    val zoneBounds = HeartRateZoneCalculator.getZoneBounds(maxHr, settings.activeProfile.restingHr)
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
@@ -90,7 +89,6 @@ fun WorkoutScreen(
 
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                    // [ФИКС] Прогресс теперь берется из WorkoutManager (по сегментам)
                     val progress = ws.progressPercent / 100f
                     
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -179,13 +177,11 @@ fun WorkoutScreen(
 
             Spacer(Modifier.height(6.dp))
 
-            // [ФИКС] Блок кнопок
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (ws.finished) {
-                    // Если тренировка завершена, показываем только одну кнопку
                     Button(
                         onClick = { 
-                            vm.stopWorkout() // Сбрасывает состояние и останавливает дорожку (на всякий случай)
+                            vm.stopWorkout()
                             onBack() 
                         },
                         modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -194,7 +190,6 @@ fun WorkoutScreen(
                         Text("Готово", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
                 } else {
-                    // Обычные кнопки во время выполнения
                     val paused = ws.paused
                     Button(
                         onClick = { vm.togglePauseWorkout() }, enabled = treadmillReady || paused, modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 14.dp),
